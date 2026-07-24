@@ -204,3 +204,21 @@ THESPORTSDB_MU_TEAM_ID = os.environ.get('THESPORTSDB_MU_TEAM_ID', '133612')
 ESPN_BASE_URL = os.environ.get('ESPN_BASE_URL', 'https://site.api.espn.com/apis/site/v2/sports/soccer')
 ESPN_LEAGUE_SLUG = os.environ.get('ESPN_LEAGUE_SLUG', 'eng.1')
 ESPN_MU_TEAM_ID = os.environ.get('ESPN_MU_TEAM_ID', '360')
+# Semua kompetisi yang mungkin diikutin MU — endpoint schedule ESPN di-scope
+# per kompetisi, jadi perlu di-loop satu-satu (summary match-nya sendiri
+# league-agnostic, nggak perlu di-loop).
+ESPN_COMPETITION_SLUGS = os.environ.get(
+    'ESPN_COMPETITION_SLUGS',
+    'eng.1,eng.fa,eng.league_cup,uefa.champions,uefa.europa,uefa.europa.conf,eng.charity,club.friendly',
+)
+
+
+# Premier League (PulseLive/Opta) — backend data resmi premierleague.com
+# sendiri. Nggak ada developer portal/ToS eksplisit buat pihak ketiga, tapi
+# ini first-party data (bukan scraping situs lain). Riwayat lengkap sejak
+# musim 1992/93, cuma cover kompetisi Premier League doang.
+
+PL_BASE_URL = os.environ.get('PL_BASE_URL', 'https://footballapi.pulselive.com/football')
+PL_ORIGIN_HEADER = os.environ.get('PL_ORIGIN_HEADER', 'https://www.premierleague.com')
+PL_MU_TEAM_ID = os.environ.get('PL_MU_TEAM_ID', '12')
+PL_COMPETITION_ID = os.environ.get('PL_COMPETITION_ID', '1')

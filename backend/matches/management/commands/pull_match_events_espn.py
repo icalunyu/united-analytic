@@ -34,47 +34,79 @@ class Command(BaseCommand):
             '--team-id', type=str, default=None, help='Override ESPN_MU_TEAM_ID dari settings'
         )
         parser.add_argument('--season', type=int, default=None, help='Contoh: 2025')
+        parser.add_argument(
+            '--slug',
+            type=str,
+            default=None,
+            help='Cuma 1 kompetisi (mis. eng.fa). Default: semua slug di ESPN_COMPETITION_SLUGS.',
+        )
 
     def handle(self, *args, **options):
         team_id = options['team_id'] or settings.ESPN_MU_TEAM_ID
         client = EspnClient()
 
-        try:
-            events = client.get_schedule(team_id, season=options['season'])
-        except EspnError as exc:
-            raise CommandError(str(exc)) from exc
+        # NB: kompetisi liga (eng.1) butuh --season eksplisit buat dapet data
+        # (nggak ada default yang selalu bener — musim baru belum tentu udah
+        # ke-publish di ESPN pas awal Juli). Kompetisi cup/friendly biasanya
+        # justru lebih lengkap TANPA season (nunjukin next/last apa adanya).
+        season = options['season']
+
+        slugs = (
+            [options['slug']]
+            if options['slug']
+            else [s.strip() for s in settings.ESPN_COMPETITION_SLUGS.split(',') if s.strip()]
+        )
 
         processed = 0
         events_total = 0
+        fixtures_total = 0
+        seen_ids = set()
 
-        for event_data in events:
+        for slug in slugs:
             try:
-                match, _ = self._save_match(event_data, mu_team_id=team_id)
+                fixtures = client.get_schedule(team_id, season=season, league_slug=slug)
             except EspnError as exc:
-                self.stdout.write(self.style.WARNING(f'  gagal proses match: {exc}'))
+                self.stdout.write(self.style.WARNING(f'  gagal narik jadwal {slug}: {exc}'))
                 continue
 
-            comp = event_data['competitions'][0]
-            state = (comp.get('status') or {}).get('type', {}).get('state')
-            if state != 'post':
-                continue
+            self.stdout.write(f'{slug}: {len(fixtures)} fixture')
 
-            try:
-                summary = client.get_summary(event_data['id'])
-            except EspnError as exc:
-                self.stdout.write(self.style.WARNING(f'  gagal narik summary match {match.id}: {exc}'))
-                continue
+            for event_data in fixtures:
+                if event_data['id'] in seen_ids:
+                    continue
+                seen_ids.add(event_data['id'])
+                fixtures_total += 1
 
-            events_total += self._save_events(match, summary.get('keyEvents') or [])
-            processed += 1
+                try:
+                    match, _ = self._save_match(event_data, mu_team_id=team_id, league_slug=slug)
+                except EspnError as exc:
+                    self.stdout.write(self.style.WARNING(f'  gagal proses match: {exc}'))
+                    continue
+
+                comp = event_data['competitions'][0]
+                state = (comp.get('status') or {}).get('type', {}).get('state')
+                if state != 'post':
+                    continue
+
+                try:
+                    summary = client.get_summary(event_data['id'], league_slug=slug)
+                except EspnError as exc:
+                    self.stdout.write(
+                        self.style.WARNING(f'  gagal narik summary match {match.id}: {exc}')
+                    )
+                    continue
+
+                events_total += self._save_events(match, summary.get('keyEvents') or [])
+                processed += 1
 
         self.stdout.write(
             self.style.SUCCESS(
-                f'Selesai. {processed} match selesai diproses, {events_total} event disimpan.'
+                f'Selesai. {fixtures_total} fixture unik dari {len(slugs)} kompetisi, '
+                f'{processed} match selesai diproses, {events_total} event disimpan.'
             )
         )
 
-    def _save_match(self, event_data, mu_team_id):
+    def _save_match(self, event_data, mu_team_id, league_slug=''):
         comp = event_data['competitions'][0]
         home = next(c for c in comp['competitors'] if c['homeAway'] == 'home')
         away = next(c for c in comp['competitors'] if c['homeAway'] == 'away')
@@ -94,7 +126,7 @@ class Command(BaseCommand):
             away_team=away_team,
             kickoff_at=kickoff_at,
             defaults={
-                'league_name': season_info.get('displayName', '') or '',
+                'league_name': season_info.get('displayName', '') or league_slug,
                 'season': season_info.get('year'),
                 'round': '',
                 'venue': venue,

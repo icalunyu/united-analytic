@@ -10,6 +10,7 @@ class DataSource(models.TextChoices):
     HIGHLIGHTLY = 'highlightly', 'Highlightly'
     THESPORTSDB = 'thesportsdb', 'TheSportsDB'
     ESPN = 'espn', 'ESPN'
+    PREMIER_LEAGUE = 'premier_league', 'Premier League (PulseLive)'
 
 
 class Team(models.Model):
