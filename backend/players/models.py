@@ -1,8 +1,18 @@
 from django.db import models
 
 
+class DataSource(models.TextChoices):
+    """Sumber data eksternal yang bisa nge-supply Team/Match. Nambah provider
+    baru cukup nambah 1 value di sini — nggak perlu migration schema baru."""
+
+    API_FOOTBALL = 'api_football', 'API-Football'
+    FOOTBALL_DATA = 'football_data', 'football-data.org'
+    HIGHLIGHTLY = 'highlightly', 'Highlightly'
+    THESPORTSDB = 'thesportsdb', 'TheSportsDB'
+    ESPN = 'espn', 'ESPN'
+
+
 class Team(models.Model):
-    api_football_id = models.PositiveIntegerField(unique=True)
     name = models.CharField(max_length=100)
     short_name = models.CharField(max_length=50, blank=True)
     code = models.CharField(max_length=10, blank=True)
@@ -21,6 +31,25 @@ class Team(models.Model):
         return self.name
 
 
+class TeamExternalRef(models.Model):
+    """Mapping (source, external_id) -> Team, biar 1 tim bisa punya ID beda
+    di tiap provider tanpa duplikasi row Team."""
+
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='external_refs')
+    source = models.CharField(max_length=30, choices=DataSource.choices)
+    external_id = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source', 'external_id'], name='unique_team_source_external_id'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.team.name} ({self.source}:{self.external_id})'
+
+
 class Player(models.Model):
     class Position(models.TextChoices):
         GOALKEEPER = 'GK', 'Goalkeeper'
@@ -33,7 +62,6 @@ class Player(models.Model):
         WINGER = 'WNG', 'Winger'
         FORWARD = 'CF', 'Centre-Forward'
 
-    api_football_id = models.PositiveIntegerField(unique=True)
     team = models.ForeignKey(
         Team, on_delete=models.SET_NULL, null=True, blank=True, related_name='players'
     )
@@ -58,6 +86,25 @@ class Player(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class PlayerExternalRef(models.Model):
+    """Mapping (source, external_id) -> Player, sama pola kayak
+    TeamExternalRef/MatchExternalRef."""
+
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='external_refs')
+    source = models.CharField(max_length=30, choices=DataSource.choices)
+    external_id = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source', 'external_id'], name='unique_player_source_external_id'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.player.name} ({self.source}:{self.external_id})'
 
 
 class Injury(models.Model):

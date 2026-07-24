@@ -77,5 +77,5 @@ class APIFootballClient:
         return self._get('teams', {'id': team_id})
 
 
-def get_client():
+def get_api_football_client():
     return APIFootballClient()

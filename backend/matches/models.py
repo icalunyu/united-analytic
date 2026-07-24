@@ -1,6 +1,6 @@
 from django.db import models
 
-from players.models import Player, Team
+from players.models import DataSource, Player, Team
 
 
 class Match(models.Model):
@@ -14,7 +14,6 @@ class Match(models.Model):
         EXTRA_TIME = 'AET', 'After Extra Time'
         PENALTIES = 'PEN', 'Penalties'
 
-    api_football_id = models.PositiveIntegerField(unique=True)
     league_id = models.PositiveIntegerField(null=True, blank=True)
     league_name = models.CharField(max_length=150, blank=True)
     season = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -39,6 +38,26 @@ class Match(models.Model):
 
     def __str__(self):
         return f'{self.home_team} vs {self.away_team} ({self.kickoff_at:%Y-%m-%d})'
+
+
+class MatchExternalRef(models.Model):
+    """Mapping (source, external_id) -> Match, sama konsepnya kayak
+    TeamExternalRef — biar 1 fixture nggak dobel row kalau ditarik dari
+    lebih dari 1 provider."""
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='external_refs')
+    source = models.CharField(max_length=30, choices=DataSource.choices)
+    external_id = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source', 'external_id'], name='unique_match_source_external_id'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.match} ({self.source}:{self.external_id})'
 
 
 class MatchEvent(models.Model):

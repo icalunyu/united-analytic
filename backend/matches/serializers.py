@@ -10,7 +10,6 @@ class TeamSerializer(serializers.ModelSerializer):
         model = Team
         fields = [
             'id',
-            'api_football_id',
             'name',
             'short_name',
             'code',
@@ -46,7 +45,6 @@ class MatchListSerializer(serializers.ModelSerializer):
         model = Match
         fields = [
             'id',
-            'api_football_id',
             'league_name',
             'season',
             'round',

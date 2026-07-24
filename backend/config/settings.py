@@ -164,3 +164,43 @@ API_FOOTBALL_BASE_URL = os.environ.get('API_FOOTBALL_BASE_URL', 'https://v3.foot
 API_FOOTBALL_KEY = os.environ.get('API_FOOTBALL_KEY', '')
 # Manchester United's team ID in API-Football is 33 by default; override via env if needed.
 MU_TEAM_ID = int(os.environ.get('MU_TEAM_ID', '33'))
+
+
+# football-data.org (sumber alternatif — free tier cover musim berjalan utk
+# Premier League & Champions League, beda skema ID tim dari API-Football)
+
+FOOTBALL_DATA_BASE_URL = os.environ.get('FOOTBALL_DATA_BASE_URL', 'https://api.football-data.org/v4')
+FOOTBALL_DATA_API_KEY = os.environ.get('FOOTBALL_DATA_API_KEY', '')
+# Manchester United's team ID in football-data.org is 66 by default; override via env if needed.
+FOOTBALL_DATA_MU_TEAM_ID = int(os.environ.get('FOOTBALL_DATA_MU_TEAM_ID', '66'))
+
+
+# Highlightly (via RapidAPI atau langsung) — punya squad, injuries, & match
+# events dalam 1 provider. HIGHLIGHTLY_API_HOST cuma perlu diisi kalau daftar
+# lewat marketplace RapidAPI, bukan langsung di highlightly.net.
+
+HIGHLIGHTLY_BASE_URL = os.environ.get('HIGHLIGHTLY_BASE_URL', 'https://soccer.highlightly.net')
+HIGHLIGHTLY_API_KEY = os.environ.get('HIGHLIGHTLY_API_KEY', '')
+HIGHLIGHTLY_API_HOST = os.environ.get('HIGHLIGHTLY_API_HOST', '')
+# Team ID Manchester United di Highlightly (ketemu lewat /teams?name=Manchester United).
+HIGHLIGHTLY_MU_TEAM_ID = os.environ.get('HIGHLIGHTLY_MU_TEAM_ID', '28867')
+
+
+# TheSportsDB — nggak butuh signup, pakai public test key. Rate limit lebih
+# longgar (30 req/menit) dan tim/pemainnya udah include idAPIfootball buat
+# cross-reference langsung ke API-Football (bukan cuma cocokin nama).
+# Dipakai sebagai fallback fixtures & squad kalau provider lain kena quota.
+
+THESPORTSDB_BASE_URL = os.environ.get('THESPORTSDB_BASE_URL', 'https://www.thesportsdb.com/api/v1/json')
+THESPORTSDB_API_KEY = os.environ.get('THESPORTSDB_API_KEY', '123')
+THESPORTSDB_MU_TEAM_ID = os.environ.get('THESPORTSDB_MU_TEAM_ID', '133612')
+
+
+# ESPN — API internal situs/app ESPN sendiri, bukan produk resmi buat pihak
+# ketiga (nggak didokumentasikan, bisa berubah/diblokir kapan aja tanpa
+# pemberitahuan). Nggak butuh key. Sumber match events (gol/kartu/substitusi)
+# paling lengkap yang kita punya sejauh ini.
+
+ESPN_BASE_URL = os.environ.get('ESPN_BASE_URL', 'https://site.api.espn.com/apis/site/v2/sports/soccer')
+ESPN_LEAGUE_SLUG = os.environ.get('ESPN_LEAGUE_SLUG', 'eng.1')
+ESPN_MU_TEAM_ID = os.environ.get('ESPN_MU_TEAM_ID', '360')

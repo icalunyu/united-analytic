@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import Match, MatchEvent
+from .models import Match, MatchEvent, MatchExternalRef
+
+
+class MatchExternalRefInline(admin.TabularInline):
+    model = MatchExternalRef
+    extra = 0
 
 
 @admin.register(Match)
@@ -16,6 +21,7 @@ class MatchAdmin(admin.ModelAdmin):
     )
     list_filter = ('status', 'league_name', 'season')
     search_fields = ('home_team__name', 'away_team__name')
+    inlines = [MatchExternalRefInline]
 
 
 @admin.register(MatchEvent)

@@ -3,9 +3,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from matches.dedup import resolve_match
 from matches.models import Match
 from matches.services import APIFootballClient, APIFootballError
-from players.models import Team
+from players.dedup import resolve_team
+from players.models import DataSource
 
 # API-Football pakai banyak short status code; kita sederhanakan ke Match.Status.
 STATUS_MAP = {
@@ -92,8 +94,9 @@ class Command(BaseCommand):
 
     def _upsert_team(self, team_data, mu_team_id):
         team_id = team_data['id']
-        team, _ = Team.objects.update_or_create(
-            api_football_id=team_id,
+        team, _ = resolve_team(
+            source=DataSource.API_FOOTBALL,
+            external_id=team_id,
             defaults={
                 'name': team_data.get('name', ''),
                 'logo_url': team_data.get('logo', '') or '',
@@ -115,16 +118,17 @@ class Command(BaseCommand):
         status_short = fixture_info.get('status', {}).get('short', 'NS')
         venue = (fixture_info.get('venue') or {}).get('name') or ''
 
-        return Match.objects.update_or_create(
-            api_football_id=fixture_info['id'],
+        return resolve_match(
+            source=DataSource.API_FOOTBALL,
+            external_id=fixture_info['id'],
+            home_team=home_team,
+            away_team=away_team,
+            kickoff_at=kickoff_at,
             defaults={
                 'league_id': league_info.get('id'),
                 'league_name': league_info.get('name', ''),
                 'season': league_info.get('season'),
                 'round': league_info.get('round', ''),
-                'home_team': home_team,
-                'away_team': away_team,
-                'kickoff_at': kickoff_at,
                 'venue': venue,
                 'referee': fixture_info.get('referee') or '',
                 'status': STATUS_MAP.get(status_short, Match.Status.NOT_STARTED),
