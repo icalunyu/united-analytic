@@ -49,6 +49,12 @@ class EspnClient:
     def get_summary(self, event_id, league_slug=None):
         return self._get(league_slug or self.default_league_slug, 'summary', {'event': event_id})
 
+    def get_scoreboard(self, date, league_slug=None):
+        """Fixture by tanggal (YYYYMMDD), bukan per tim — nangkep match yang
+        kadang kelewat di get_schedule (mis. friendly kecil kayak tur pramusim)."""
+        payload = self._get(league_slug or self.default_league_slug, 'scoreboard', {'dates': date})
+        return payload.get('events') or []
+
 
 def get_espn_client():
     return EspnClient()

@@ -92,3 +92,33 @@ class MatchEvent(models.Model):
 
     def __str__(self):
         return f'{self.match} - {self.get_event_type_display()} ({self.minute}\')'
+
+
+class MatchTeamStatistics(models.Model):
+    """Statistik teknis 1 tim buat 1 match (penguasaan bola, tembakan, dll).
+    Berguna buat live pundit & post-match summary."""
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='team_statistics')
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='match_statistics')
+
+    possession_pct = models.PositiveSmallIntegerField(null=True, blank=True)
+    shots_total = models.PositiveSmallIntegerField(null=True, blank=True)
+    shots_on_target = models.PositiveSmallIntegerField(null=True, blank=True)
+    corners = models.PositiveSmallIntegerField(null=True, blank=True)
+    fouls = models.PositiveSmallIntegerField(null=True, blank=True)
+    offsides = models.PositiveSmallIntegerField(null=True, blank=True)
+    yellow_cards = models.PositiveSmallIntegerField(null=True, blank=True)
+    red_cards = models.PositiveSmallIntegerField(null=True, blank=True)
+    passes_total = models.PositiveSmallIntegerField(null=True, blank=True)
+    passes_accurate = models.PositiveSmallIntegerField(null=True, blank=True)
+    saves = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['match', 'team'], name='unique_match_team_statistics')
+        ]
+
+    def __str__(self):
+        return f'{self.match} - {self.team.name} stats'

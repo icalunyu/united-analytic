@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from players.models import Team
 
-from .models import Match, MatchEvent
+from .models import Match, MatchEvent, MatchTeamStatistics
 
 
 class TeamSerializer(serializers.ModelSerializer):
@@ -58,8 +58,30 @@ class MatchListSerializer(serializers.ModelSerializer):
         ]
 
 
+class MatchTeamStatisticsSerializer(serializers.ModelSerializer):
+    team = TeamSerializer(read_only=True)
+
+    class Meta:
+        model = MatchTeamStatistics
+        fields = [
+            'team',
+            'possession_pct',
+            'shots_total',
+            'shots_on_target',
+            'corners',
+            'fouls',
+            'offsides',
+            'yellow_cards',
+            'red_cards',
+            'passes_total',
+            'passes_accurate',
+            'saves',
+        ]
+
+
 class MatchDetailSerializer(MatchListSerializer):
     events = MatchEventSerializer(many=True, read_only=True)
+    team_statistics = MatchTeamStatisticsSerializer(many=True, read_only=True)
 
     class Meta(MatchListSerializer.Meta):
-        fields = MatchListSerializer.Meta.fields + ['referee', 'events']
+        fields = MatchListSerializer.Meta.fields + ['referee', 'events', 'team_statistics']

@@ -13,10 +13,19 @@ function formatKickoff(isoString) {
   })
 }
 
+const LIVE_STATUSES = ['LIVE', 'HT']
+
+function LiveBadge() {
+  return <span className="live-badge">● LIVE</span>
+}
+
 function MatchCard({ match, onSelect }) {
+  const isLive = LIVE_STATUSES.includes(match.status)
+
   return (
     <li className="match-card match-card-clickable" onClick={() => onSelect(match.id)}>
       <div className="match-competition">
+        {isLive && <LiveBadge />}
         {match.league_name}
         {match.round ? ` · ${match.round}` : ''}
       </div>

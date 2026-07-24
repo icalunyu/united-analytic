@@ -57,6 +57,60 @@ function EventRow({ event }) {
   )
 }
 
+const STAT_ROWS = [
+  { key: 'possession_pct', label: 'Penguasaan Bola', suffix: '%' },
+  { key: 'shots_total', label: 'Tembakan' },
+  { key: 'shots_on_target', label: 'Tembakan Tepat Sasaran' },
+  { key: 'corners', label: 'Tendangan Sudut' },
+  { key: 'passes_accurate', label: 'Operan Akurat' },
+  { key: 'fouls', label: 'Pelanggaran' },
+  { key: 'offsides', label: 'Offside' },
+  { key: 'yellow_cards', label: 'Kartu Kuning' },
+  { key: 'red_cards', label: 'Kartu Merah' },
+  { key: 'saves', label: 'Penyelamatan Kiper' },
+]
+
+function StatRow({ label, home, away, suffix = '' }) {
+  const total = (home ?? 0) + (away ?? 0)
+  const homePct = total > 0 ? (home / total) * 100 : 50
+
+  return (
+    <div className="stat-row">
+      <div className="stat-values">
+        <span>{home ?? '-'}{suffix}</span>
+        <span className="stat-label">{label}</span>
+        <span>{away ?? '-'}{suffix}</span>
+      </div>
+      <div className="stat-bar">
+        <div className="stat-bar-home" style={{ width: `${homePct}%` }} />
+        <div className="stat-bar-away" style={{ width: `${100 - homePct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function MatchStatistics({ teamStatistics, homeTeamId }) {
+  if (!teamStatistics || teamStatistics.length < 2) return null
+
+  const home = teamStatistics.find((s) => s.team.id === homeTeamId)
+  const away = teamStatistics.find((s) => s.team.id !== homeTeamId)
+  if (!home || !away) return null
+
+  return (
+    <div className="stats-block">
+      {STAT_ROWS.map((row) => (
+        <StatRow
+          key={row.key}
+          label={row.label}
+          home={home[row.key]}
+          away={away[row.key]}
+          suffix={row.suffix}
+        />
+      ))}
+    </div>
+  )
+}
+
 function MatchDetail({ matchId, onBack }) {
   const [match, setMatch] = useState(null)
   const [status, setStatus] = useState('loading')
@@ -98,6 +152,7 @@ function MatchDetail({ matchId, onBack }) {
       {status === 'ready' && match && (
         <div className="match-detail">
           <div className="match-competition">
+            {['LIVE', 'HT'].includes(match.status) && <span className="live-badge">● LIVE</span>}
             {match.league_name}
             {match.round ? ` · ${match.round}` : ''}
           </div>
@@ -119,6 +174,9 @@ function MatchDetail({ matchId, onBack }) {
             {match.venue && <span> · {match.venue}</span>}
             {match.referee && <span> · Wasit: {match.referee}</span>}
           </div>
+
+          <h2 className="events-heading">Statistik Pertandingan</h2>
+          <MatchStatistics teamStatistics={match.team_statistics} homeTeamId={match.home_team.id} />
 
           <h2 className="events-heading">Jalannya Pertandingan</h2>
           {match.events.length === 0 ? (

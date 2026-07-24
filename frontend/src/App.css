@@ -56,6 +56,19 @@
   border-color: var(--accent);
 }
 
+.live-badge {
+  display: inline-block;
+  color: #e5484d;
+  font-weight: 700;
+  margin-right: 8px;
+  animation: live-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .match-competition {
   font-size: 13px;
   color: var(--text);
@@ -115,6 +128,48 @@
   font-size: 16px;
   margin: 24px 0 12px;
   color: var(--text-h);
+}
+
+.stats-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-values {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.stat-label {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.stat-bar {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.stat-bar-home {
+  background: var(--accent);
+}
+
+.stat-bar-away {
+  background: var(--border);
+  border-left: 1px solid var(--bg);
 }
 
 .event-list {

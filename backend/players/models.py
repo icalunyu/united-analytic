@@ -10,6 +10,7 @@ class DataSource(models.TextChoices):
     HIGHLIGHTLY = 'highlightly', 'Highlightly'
     THESPORTSDB = 'thesportsdb', 'TheSportsDB'
     ESPN = 'espn', 'ESPN'
+    ESPN_COMMENTARY = 'espn_commentary', 'ESPN (parsed dari commentary teks)'
     PREMIER_LEAGUE = 'premier_league', 'Premier League (PulseLive)'
 
 
