@@ -1,0 +1,37 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Skuad — MU Analytics{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Skuad</h1>
+  <p class="text-sm text-gray-500">{{ total }} pemain aktif</p>
+</div>
+
+{% for group in groups %}
+<div class="mb-8">
+  <h2 class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">{{ group.label }}</h2>
+  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    {% for p in group.players %}
+    <div class="card flex items-center gap-3 p-3">
+      <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5">
+        {% if p.photo_url %}
+          <img src="{{ p.photo_url }}" alt="{{ p.name }}" class="h-full w-full object-cover">
+        {% else %}
+          <span class="font-mono text-sm text-gray-400">{{ p.shirt_number|default:"?" }}</span>
+        {% endif %}
+      </div>
+      <div>
+        <div class="text-sm font-medium text-[var(--color-text-strong)]">{{ p.name }}</div>
+        <div class="text-xs text-gray-500">
+          {% if p.shirt_number %}#{{ p.shirt_number }} · {% endif %}{{ p.nationality }}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% empty %}
+<p class="card p-6 text-sm text-gray-500">Belum ada data skuad.</p>
+{% endfor %}
+{% endblock %}

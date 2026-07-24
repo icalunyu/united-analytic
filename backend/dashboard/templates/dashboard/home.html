@@ -1,0 +1,160 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Dashboard — MU Analytics{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Dashboard</h1>
+  <p class="text-sm text-gray-500">Ringkasan performa Manchester United</p>
+</div>
+
+<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-5">
+  <div class="card p-4">
+    <div class="text-xs text-gray-500">Main (20 terakhir)</div>
+    <div class="mt-1 text-2xl font-bold text-[var(--color-text-strong)]">{{ stats.played }}</div>
+    <div class="mt-1 text-xs text-gray-500">{{ stats.wins }}M {{ stats.draws }}S {{ stats.losses }}K</div>
+  </div>
+  <div class="card p-4">
+    <div class="text-xs text-gray-500">Win Rate</div>
+    <div class="mt-1 text-2xl font-bold text-[var(--color-win)]">{{ stats.win_pct }}%</div>
+  </div>
+  <div class="card p-4">
+    <div class="text-xs text-gray-500">Gol Dicetak</div>
+    <div class="mt-1 text-2xl font-bold text-[var(--color-text-strong)]">{{ stats.goals_for }}</div>
+  </div>
+  <div class="card p-4">
+    <div class="text-xs text-gray-500">Gol Kebobolan</div>
+    <div class="mt-1 text-2xl font-bold text-[var(--color-text-strong)]">{{ stats.goals_against }}</div>
+  </div>
+  <div class="card p-4">
+    <div class="text-xs text-gray-500">Skuad Aktif</div>
+    <div class="mt-1 text-2xl font-bold text-[var(--color-text-strong)]">{{ squad_size }}</div>
+    <div class="mt-1 text-xs text-gray-500">{{ competitions_tracked }} kompetisi ter-track</div>
+  </div>
+</div>
+
+{% if featured %}
+<div class="card mb-8 p-6">
+  <div class="mb-4 flex items-center justify-between">
+    <div class="flex items-center gap-2 text-xs text-gray-500">
+      {% if is_featured_live %}<span class="badge-live">● LIVE</span>{% endif %}
+      {{ featured.league_name }}{% if featured.round %} · {{ featured.round }}{% endif %}
+    </div>
+    <a href="{% url 'dashboard:match_detail' featured.id %}" class="text-xs font-medium text-[var(--color-mu)] hover:underline">Lihat detail →</a>
+  </div>
+  <div class="flex items-center justify-between gap-4">
+    <div class="flex flex-1 flex-col items-center gap-2">
+      {% if featured.home_team.logo_url %}<img src="{{ featured.home_team.logo_url }}" alt="" class="h-12 w-12 object-contain">{% endif %}
+      <span class="text-center text-sm font-semibold {% if featured.home_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-[var(--color-text-strong)]{% endif %}">{{ featured.home_team.name }}</span>
+    </div>
+    <div class="text-center">
+      {% if featured.home_score is not None %}
+        <div class="text-2xl font-bold text-[var(--color-text-strong)]">{{ featured.home_score }} - {{ featured.away_score }}</div>
+      {% else %}
+        <div class="text-lg font-bold text-gray-500">VS</div>
+      {% endif %}
+      <div class="mt-1 text-xs text-gray-500">{{ featured.kickoff_at|date:"d M Y, H:i" }}</div>
+    </div>
+    <div class="flex flex-1 flex-col items-center gap-2">
+      {% if featured.away_team.logo_url %}<img src="{{ featured.away_team.logo_url }}" alt="" class="h-12 w-12 object-contain">{% endif %}
+      <span class="text-center text-sm font-semibold {% if featured.away_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-[var(--color-text-strong)]{% endif %}">{{ featured.away_team.name }}</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+  <div class="card p-5">
+    <h2 class="mb-4 text-sm font-semibold text-[var(--color-text-strong)]">Jadwal Berikutnya</h2>
+    {% if upcoming %}
+      <ul class="flex flex-col gap-3">
+        {% for m in upcoming %}
+        <li>
+          <a href="{% url 'dashboard:match_detail' m.id %}" class="flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-white/5">
+            <span class="text-sm text-[var(--color-text-strong)]">{{ m.home_team.short_name|default:m.home_team.name }} vs {{ m.away_team.short_name|default:m.away_team.name }}</span>
+            <span class="text-xs text-gray-500">{{ m.kickoff_at|date:"d M, H:i" }}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-sm text-gray-500">Belum ada jadwal mendatang.</p>
+    {% endif %}
+  </div>
+
+  <div class="card p-5">
+    <h2 class="mb-4 text-sm font-semibold text-[var(--color-text-strong)]">Form Terakhir</h2>
+    {% if recent_form %}
+      <div class="flex gap-2">
+        {% for m in recent_form %}
+        <a href="{% url 'dashboard:match_detail' m.id %}" title="{% if m.home_team.is_manchester_united %}{{ m.away_team.name }}{% else %}{{ m.home_team.name }}{% endif %} ({{ m.home_score }}-{{ m.away_score }})"
+           class="form-pill {% if m.mu_result == 'W' %}bg-[var(--color-win)]{% elif m.mu_result == 'D' %}bg-[var(--color-draw)]{% else %}bg-[var(--color-loss)]{% endif %}">
+          {{ m.mu_result }}
+        </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-sm text-gray-500">Belum ada data.</p>
+    {% endif %}
+
+    <h2 class="mb-3 mt-6 text-sm font-semibold text-[var(--color-text-strong)]">Heatmap Hasil (20 match terakhir)</h2>
+    {% if heatmap %}
+      <div class="flex flex-wrap gap-1.5">
+        {% for m in heatmap %}
+        <a href="{% url 'dashboard:match_detail' m.id %}" title="{% if m.home_team.is_manchester_united %}vs {{ m.away_team.name }}{% else %}vs {{ m.home_team.name }}{% endif %} — {{ m.home_score }}-{{ m.away_score }} ({{ m.kickoff_at|date:'d M Y' }})"
+           class="h-5 w-5 rounded {% if m.mu_result == 'W' %}bg-[var(--color-win)]{% elif m.mu_result == 'D' %}bg-[var(--color-draw)]{% else %}bg-[var(--color-loss)]{% endif %} opacity-80 hover:opacity-100"></a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if chart_labels %}
+<div class="card p-5">
+  <h2 class="mb-4 text-sm font-semibold text-[var(--color-text-strong)]">Tren Gol (Dicetak vs Kebobolan)</h2>
+  <canvas id="goalsChart" height="80"></canvas>
+</div>
+
+{{ chart_labels|json_script:"chart-labels" }}
+{{ chart_goals_for|json_script:"chart-goals-for" }}
+{{ chart_goals_against|json_script:"chart-goals-against" }}
+<script>
+  const labels = JSON.parse(document.getElementById('chart-labels').textContent);
+  const goalsFor = JSON.parse(document.getElementById('chart-goals-for').textContent);
+  const goalsAgainst = JSON.parse(document.getElementById('chart-goals-against').textContent);
+
+  new Chart(document.getElementById('goalsChart'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Gol Dicetak',
+          data: goalsFor,
+          borderColor: '#da020e',
+          backgroundColor: 'rgba(218,2,14,0.15)',
+          tension: 0.3,
+          fill: true,
+        },
+        {
+          label: 'Gol Kebobolan',
+          data: goalsAgainst,
+          borderColor: '#6b7280',
+          backgroundColor: 'rgba(107,114,128,0.1)',
+          tension: 0.3,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { ticks: { color: '#9ca3af' }, grid: { color: '#232330' } },
+        y: { ticks: { color: '#9ca3af' }, grid: { color: '#232330' }, beginAtZero: true },
+      },
+      plugins: { legend: { labels: { color: '#9ca3af' } } },
+    },
+  });
+</script>
+{% endif %}
+{% endblock %}

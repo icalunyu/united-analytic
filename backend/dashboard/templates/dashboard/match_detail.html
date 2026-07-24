@@ -1,0 +1,111 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}{{ match.home_team.name }} vs {{ match.away_team.name }} — MU Analytics{% endblock %}
+
+{% block content %}
+<a href="{% url 'dashboard:schedule' %}" class="mb-4 inline-block text-sm text-[var(--color-mu)] hover:underline">← Kembali ke jadwal</a>
+
+<div class="card mb-6 p-6">
+  <div class="mb-4 flex items-center gap-2 text-xs text-gray-500">
+    {% if is_live %}<span class="badge-live">● LIVE</span>{% endif %}
+    {{ match.league_name }}{% if match.round %} · {{ match.round }}{% endif %}
+  </div>
+  <div class="flex items-center justify-between gap-4">
+    <div class="flex flex-1 flex-col items-center gap-2">
+      {% if match.home_team.logo_url %}<img src="{{ match.home_team.logo_url }}" alt="" class="h-14 w-14 object-contain">{% endif %}
+      <span class="text-center text-sm font-semibold {% if match.home_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-[var(--color-text-strong)]{% endif %}">{{ match.home_team.name }}</span>
+    </div>
+    <div class="text-center">
+      {% if match.home_score is not None %}
+        <div class="text-3xl font-bold text-[var(--color-text-strong)]">{{ match.home_score }} - {{ match.away_score }}</div>
+      {% else %}
+        <div class="text-xl font-bold text-gray-500">VS</div>
+      {% endif %}
+    </div>
+    <div class="flex flex-1 flex-col items-center gap-2">
+      {% if match.away_team.logo_url %}<img src="{{ match.away_team.logo_url }}" alt="" class="h-14 w-14 object-contain">{% endif %}
+      <span class="text-center text-sm font-semibold {% if match.away_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-[var(--color-text-strong)]{% endif %}">{{ match.away_team.name }}</span>
+    </div>
+  </div>
+  <div class="mt-4 text-center text-xs text-gray-500">
+    {{ match.kickoff_at|date:"D, d M Y H:i" }}{% if match.venue %} · {{ match.venue }}{% endif %}{% if match.referee %} · Wasit: {{ match.referee }}{% endif %}
+  </div>
+</div>
+
+{% if has_stats %}
+<div class="card mb-6 p-5">
+  <h2 class="mb-4 text-sm font-semibold text-[var(--color-text-strong)]">Statistik Pertandingan</h2>
+  <canvas id="statsChart" height="220"></canvas>
+
+  {% if card_rows %}
+  <div class="mt-5 flex flex-wrap gap-4 border-t border-[var(--color-border)] pt-4">
+    {% for label, home_val, away_val in card_rows %}
+    <div class="flex items-center gap-2 text-xs text-gray-400">
+      <span>{{ home_val }}</span>
+      <span>{{ label }}</span>
+      <span>{{ away_val }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{{ chart_stat_labels|json_script:"stat-labels" }}
+{{ chart_home_values|json_script:"stat-home" }}
+{{ chart_away_values|json_script:"stat-away" }}
+<script>
+  const statLabels = JSON.parse(document.getElementById('stat-labels').textContent);
+  const statHome = JSON.parse(document.getElementById('stat-home').textContent);
+  const statAway = JSON.parse(document.getElementById('stat-away').textContent);
+
+  new Chart(document.getElementById('statsChart'), {
+    type: 'bar',
+    data: {
+      labels: statLabels,
+      datasets: [
+        { label: '{{ match.home_team.short_name|default:match.home_team.name|escapejs }}', data: statHome, backgroundColor: '#da020e' },
+        { label: '{{ match.away_team.short_name|default:match.away_team.name|escapejs }}', data: statAway, backgroundColor: '#4b5563' },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      scales: {
+        x: { ticks: { color: '#9ca3af' }, grid: { color: '#232330' }, beginAtZero: true },
+        y: { ticks: { color: '#9ca3af' }, grid: { color: '#232330' } },
+      },
+      plugins: { legend: { labels: { color: '#9ca3af' } } },
+    },
+  });
+</script>
+{% endif %}
+
+<div class="card p-5">
+  <h2 class="mb-4 text-sm font-semibold text-[var(--color-text-strong)]">Jalannya Pertandingan</h2>
+  {% if events %}
+  <ul class="flex flex-col gap-1">
+    {% for e in events %}
+    <li class="flex items-center gap-3 border-b border-[var(--color-border)] py-2 text-sm last:border-0">
+      <span class="w-10 shrink-0 font-mono text-xs text-gray-500">
+        {{ e.minute }}{% if e.extra_minute %}+{{ e.extra_minute }}{% endif %}'
+      </span>
+      <span>
+        {% if e.event_type == 'GOAL' %}⚽{% elif e.event_type == 'CARD' %}🟨{% elif e.event_type == 'SUBST' %}🔄{% else %}📺{% endif %}
+      </span>
+      <span class="{% if e.team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-gray-300{% endif %}">
+        {% if e.event_type == 'GOAL' %}
+          {{ e.player.name|default:"?" }}{% if e.assist_player %} <span class="text-gray-500">(assist: {{ e.assist_player.name }})</span>{% endif %}
+        {% elif e.event_type == 'SUBST' %}
+          {{ e.player.name|default:"?" }}{% if e.assist_player %} <span class="text-gray-500">masuk gantiin {{ e.assist_player.name }}</span>{% endif %}
+        {% else %}
+          {{ e.player.name|default:e.detail }}
+        {% endif %}
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-gray-500">Belum ada data event buat match ini.</p>
+  {% endif %}
+</div>
+{% endblock %}

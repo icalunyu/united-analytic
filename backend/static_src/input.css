@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0a0f;
+  --color-surface: #14141c;
+  --color-surface-hover: #1a1a24;
+  --color-border: #232330;
+  --color-text: #9ca3af;
+  --color-text-strong: #f3f4f6;
+  --color-mu: #da020e;
+  --color-mu-dark: #a3010a;
+  --color-win: #22c55e;
+  --color-draw: #eab308;
+  --color-loss: #ef4444;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+  }
+}
+
+@layer components {
+  .card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-colors;
+  }
+
+  .nav-link.active {
+    @apply bg-[var(--color-mu)]/15 text-[var(--color-mu)];
+  }
+
+  .badge-live {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-400;
+  }
+
+  .form-pill {
+    @apply flex h-6 w-6 items-center justify-center rounded text-xs font-bold text-white;
+  }
+}

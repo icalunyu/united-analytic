@@ -1,0 +1,52 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="id" class="bg-[var(--color-bg)]">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}MU Analytics{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body class="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] antialiased">
+  <div class="flex min-h-screen">
+    <aside class="hidden w-60 shrink-0 flex-col border-r border-[var(--color-border)] px-4 py-6 lg:flex">
+      <div class="mb-8 px-2">
+        <div class="text-lg font-bold text-[var(--color-text-strong)]">MU Analytics</div>
+        <div class="text-xs text-gray-500">IndoManUtd Jogja</div>
+      </div>
+      <nav class="flex flex-col gap-1">
+        <a href="{% url 'dashboard:home' %}" class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}">
+          <span>📊</span> Dashboard
+        </a>
+        <a href="{% url 'dashboard:schedule' %}" class="nav-link {% if active_nav == 'schedule' %}active{% endif %}">
+          <span>📅</span> Jadwal
+        </a>
+        <a href="{% url 'dashboard:squad' %}" class="nav-link {% if active_nav == 'squad' %}active{% endif %}">
+          <span>👥</span> Skuad
+        </a>
+        <a href="{% url 'dashboard:injuries' %}" class="nav-link {% if active_nav == 'injuries' %}active{% endif %}">
+          <span>🩹</span> Cedera
+        </a>
+      </nav>
+      <div class="mt-auto px-2 text-xs text-gray-600">© 2026 IndoManUtd Jogja</div>
+    </aside>
+
+    <div class="flex flex-1 flex-col">
+      <header class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3 lg:hidden">
+        <div class="text-base font-bold text-[var(--color-text-strong)]">MU Analytics</div>
+        <nav class="flex gap-3 text-xs">
+          <a href="{% url 'dashboard:home' %}" class="text-gray-400">Dashboard</a>
+          <a href="{% url 'dashboard:schedule' %}" class="text-gray-400">Jadwal</a>
+          <a href="{% url 'dashboard:squad' %}" class="text-gray-400">Skuad</a>
+          <a href="{% url 'dashboard:injuries' %}" class="text-gray-400">Cedera</a>
+        </nav>
+      </header>
+
+      <main class="flex-1 px-4 py-6 lg:px-8 lg:py-8">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>

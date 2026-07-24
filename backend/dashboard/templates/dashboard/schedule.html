@@ -1,0 +1,48 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Jadwal — MU Analytics{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Jadwal</h1>
+    <p class="text-sm text-gray-500">
+      {% if show_all %}Semua pertandingan, terbaru dulu{% else %}Pertandingan live &amp; mendatang{% endif %}
+    </p>
+  </div>
+  <a href="?{% if not show_all %}all=1{% endif %}" class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white">
+    {% if show_all %}Lihat mendatang saja{% else %}Lihat semua histori{% endif %}
+  </a>
+</div>
+
+{% if matches %}
+<ul class="flex flex-col gap-3">
+  {% for m in matches %}
+  <li>
+    <a href="{% url 'dashboard:match_detail' m.id %}" class="card block p-4 transition-colors hover:border-[var(--color-mu)]/50">
+      <div class="mb-2 flex items-center gap-2 text-xs text-gray-500">
+        {% if m.status == 'LIVE' or m.status == 'HT' %}<span class="badge-live">● LIVE</span>{% endif %}
+        {{ m.league_name }}{% if m.round %} · {{ m.round }}{% endif %}
+      </div>
+      <div class="flex items-center justify-between gap-4">
+        <span class="flex-1 text-sm font-semibold {% if m.home_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-[var(--color-text-strong)]{% endif %}">
+          {{ m.home_team.name }}
+        </span>
+        <span class="shrink-0 font-mono text-sm text-[var(--color-text-strong)]">
+          {% if m.home_score is not None %}{{ m.home_score }} - {{ m.away_score }}{% else %}vs{% endif %}
+        </span>
+        <span class="flex-1 text-right text-sm font-semibold {% if m.away_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-[var(--color-text-strong)]{% endif %}">
+          {{ m.away_team.name }}
+        </span>
+      </div>
+      <div class="mt-2 text-xs text-gray-500">
+        {{ m.kickoff_at|date:"D, d M Y H:i" }}{% if m.venue %} · {{ m.venue }}{% endif %}
+      </div>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="card p-6 text-sm text-gray-500">Belum ada data jadwal.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Cedera — MU Analytics{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Riwayat Cedera</h1>
+  <p class="text-sm text-gray-500">40 catatan terbaru</p>
+</div>
+
+{% if injuries %}
+<div class="card overflow-hidden">
+  <table class="w-full text-left text-sm">
+    <thead>
+      <tr class="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-gray-500">
+        <th class="px-4 py-3 font-medium">Pemain</th>
+        <th class="px-4 py-3 font-medium">Cedera</th>
+        <th class="px-4 py-3 font-medium">Periode</th>
+        <th class="px-4 py-3 font-medium">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inj in injuries %}
+      <tr class="border-b border-[var(--color-border)] last:border-0">
+        <td class="flex items-center gap-2 px-4 py-3">
+          {% if inj.player.photo_url %}<img src="{{ inj.player.photo_url }}" alt="" class="h-7 w-7 rounded-full object-cover">{% endif %}
+          <span class="text-[var(--color-text-strong)]">{{ inj.player.name }}</span>
+        </td>
+        <td class="px-4 py-3 text-gray-400">{{ inj.reason }}</td>
+        <td class="px-4 py-3 text-gray-400">
+          {{ inj.start_date|date:"d M Y" }}{% if inj.actual_return_date %} – {{ inj.actual_return_date|date:"d M Y" }}{% elif inj.expected_return_date %} – {{ inj.expected_return_date|date:"d M Y" }}{% endif %}
+        </td>
+        <td class="px-4 py-3">
+          <span class="rounded-full px-2.5 py-1 text-xs font-medium
+            {% if inj.status == 'RETURNED' %}bg-[var(--color-win)]/15 text-[var(--color-win)]
+            {% elif inj.status == 'DOUBTFUL' %}bg-[var(--color-draw)]/15 text-[var(--color-draw)]
+            {% else %}bg-[var(--color-loss)]/15 text-[var(--color-loss)]{% endif %}">
+            {% if inj.status == 'RETURNED' %}Sudah Pulih{% elif inj.status == 'DOUBTFUL' %}Diragukan{% else %}Absen{% endif %}
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="card p-6 text-sm text-gray-500">Belum ada data cedera.</p>
+{% endif %}
+{% endblock %}
