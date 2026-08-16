@@ -66,8 +66,45 @@ Data ditarik dari 6 provider gratis yang saling melengkapi (kalau satu kena quot
 | `pull_match_events` | Highlightly | Event pertandingan (quota harian ketat) |
 | `pull_match_events_espn` | ESPN (API internal, tidak resmi) | Event + statistik pertandingan, cover 8 kompetisi (`--slug` buat pilih 1, atau semua sekaligus) |
 | `pull_match_events_pl` | Premier League resmi (PulseLive/Opta) | Event pertandingan resmi, riwayat sejak 1992/93, cuma Premier League |
+| `pull_xg_understat` | Understat | xG tiap tembakan + xG/xA/xGChain/xGBuildup & menit main per pemain. Cuma Premier League |
 
 Isi API key yang mau dipake di `backend/.env` (lihat `.env.example` buat daftar lengkap variable + link daftar tiap provider).
+
+### Apa yang ditarik dari ESPN
+
+`pull_match_events_espn` itu command paling "gemuk" — sekali jalan dia nyimpen:
+
+- **Event** (gol/kartu/substitusi) → `MatchEvent`, buat timeline
+- **Seluruh play-by-play** (tembakan meleset, sepak pojok, pelanggaran, offside) berikut koordinat lapangan → `MatchPlay`, bahan mentah momentum serangan
+- **28 statistik tim** (termasuk tekel, intersep, umpan silang, sapuan) → `MatchTeamStatistics`
+- **Statistik per pemain per match** + formasi awal (mis. `4-2-3-1`) → `PlayerMatchStatistics`
+
+Catatan penting buat yang mau ngoprek: ESPN ngirim play yang sama berkali-kali
+di `commentary` dengan `sequence` beda-beda (96 entri bisa cuma 60 play unik),
+jadi dedup **wajib** pakai `play.id`. Kalau nggak, pelanggaran kehitung dobel
+dan momentumnya ngaco.
+
+## Momentum serangan
+
+Grafik momentum di halaman match dihitung sendiri (`matches/momentum.py`), bukan
+diambil dari provider manapun. Alurnya: tiap play dikasih bobot bahaya
+(gol > tembakan tepat sasaran > tembakan diblok > sepak pojok), dikali faktor
+kedekatan ke gawang dari koordinat lapangan ESPN, lalu disebar ke beberapa menit
+sekitarnya biar kurvanya halus. Nilainya bertanda — positif tuan rumah, negatif
+tamu.
+
+Alasan dihitung sendiri, bukan narik dari Sofascore/FotMob: keduanya ngebatasi
+akses otomatis di ToS dan dijagain Cloudflare yang rutin nolak IP datacenter —
+artinya besar kemungkinan mati begitu di-deploy ke shared hosting. Model sendiri
+juga jalan di semua kompetisi, bukan cuma yang di-cover provider itu.
+
+Buat nyetel bobotnya ada `calibrate_momentum` — **alat lokal, jangan dijadwalin
+di cron**. Dia bandingin kurva kita sama attack momentum Sofascore dan ngitung
+korelasinya:
+
+```bash
+python manage.py calibrate_momentum --match 241 --sofascore-event 12436870
+```
 
 ## Deploy ke cPanel (production)
 

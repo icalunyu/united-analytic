@@ -51,6 +51,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -137,6 +138,13 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
+# Host ini nggak punya web server config terpisah buat static files —
+# Django (lewat whitenoise) yang serve semuanya sendiri, dev maupun prod.
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+}
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
@@ -219,6 +227,17 @@ ESPN_COMPETITION_SLUGS = os.environ.get(
 # sendiri. Nggak ada developer portal/ToS eksplisit buat pihak ketiga, tapi
 # ini first-party data (bukan scraping situs lain). Riwayat lengkap sejak
 # musim 1992/93, cuma cover kompetisi Premier League doang.
+
+# Understat — satu-satunya sumber xG gratis yang cover Premier League.
+# Nggak butuh API key, tapi endpoint JSON-nya cuma jalan kalau request bawa
+# header X-Requested-With (lihat services/understat.py). Cakupannya cuma 6
+# liga top Eropa — buat MU berarti Premier League doang, nggak ada cup.
+
+UNDERSTAT_BASE_URL = os.environ.get('UNDERSTAT_BASE_URL', 'https://understat.com')
+# Nama tim di Understat dipakai langsung di URL, bukan ID numerik.
+UNDERSTAT_MU_TEAM_NAME = os.environ.get('UNDERSTAT_MU_TEAM_NAME', 'Manchester United')
+UNDERSTAT_DEFAULT_SEASON = os.environ.get('UNDERSTAT_DEFAULT_SEASON', '2025')
+
 
 PL_BASE_URL = os.environ.get('PL_BASE_URL', 'https://footballapi.pulselive.com/football')
 PL_ORIGIN_HEADER = os.environ.get('PL_ORIGIN_HEADER', 'https://www.premierleague.com')

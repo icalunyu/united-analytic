@@ -1,0 +1,15 @@
+{% comment %}
+Isi 1 sisi baris timeline. Dipakai dua kali dari match_detail.html — sekali
+buat kolom kiri (align="right", urutan dibalik biar ikon nempel garis tengah)
+dan sekali buat kolom kanan.
+{% endcomment %}
+<div class="flex min-w-0 items-center gap-2 {% if align == 'right' %}flex-row-reverse{% endif %}">
+  <span class="shrink-0 text-sm leading-none">{{ row.icon }}</span>
+  {% if row.score %}
+  <span class="shrink-0 rounded bg-[var(--color-mu)] px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-white">{{ row.score }}</span>
+  {% endif %}
+  <div class="min-w-0 {% if align == 'right' %}text-right{% endif %}">
+    <div class="truncate text-sm {% if row.is_mu %}font-medium text-[var(--color-mu)]{% else %}text-gray-300{% endif %}">{{ row.title }}</div>
+    {% if row.subtitle %}<div class="truncate text-xs text-gray-500">{{ row.subtitle }}</div>{% endif %}
+  </div>
+</div>

@@ -4,6 +4,7 @@ from .football_data import FootballDataClient, FootballDataError, get_football_d
 from .highlightly import HighlightlyClient, HighlightlyError, get_highlightly_client
 from .premier_league import PremierLeagueClient, PremierLeagueError, get_premier_league_client
 from .thesportsdb import TheSportsDbClient, TheSportsDbError, get_thesportsdb_client
+from .understat import UnderstatClient, UnderstatError, get_understat_client
 
 __all__ = [
     'APIFootballClient',
@@ -24,4 +25,7 @@ __all__ = [
     'TheSportsDbClient',
     'TheSportsDbError',
     'get_thesportsdb_client',
+    'UnderstatClient',
+    'UnderstatError',
+    'get_understat_client',
 ]

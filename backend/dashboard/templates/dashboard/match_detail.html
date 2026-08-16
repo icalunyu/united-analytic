@@ -27,10 +27,103 @@
       <span class="text-center text-sm font-semibold {% if match.away_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-[var(--color-text-strong)]{% endif %}">{{ match.away_team.name }}</span>
     </div>
   </div>
+  {% if has_xg %}
+  <!-- xG cuma ada buat Premier League (cakupan Understat). -->
+  <div class="mt-4 flex items-center justify-center gap-3 text-xs">
+    <span class="font-mono font-semibold text-[var(--color-text-strong)]">{{ home_xg }}</span>
+    <span class="rounded bg-white/5 px-2 py-0.5 text-gray-400">xG</span>
+    <span class="font-mono font-semibold text-[var(--color-text-strong)]">{{ away_xg }}</span>
+  </div>
+  {% endif %}
+
   <div class="mt-4 text-center text-xs text-gray-500">
     {{ match.kickoff_at|date:"D, d M Y H:i" }}{% if match.venue %} · {{ match.venue }}{% endif %}{% if match.referee %} · Wasit: {{ match.referee }}{% endif %}
+    {% if match.home_formation %} · {{ match.home_formation }} vs {{ match.away_formation }}{% endif %}
   </div>
 </div>
+
+{% if momentum_values %}
+<div class="card mb-6 p-5">
+  <div class="mb-1 flex items-center justify-between">
+    <h2 class="text-sm font-semibold text-[var(--color-text-strong)]">Momentum Serangan</h2>
+    <div class="flex items-center gap-3 text-xs text-gray-500">
+      <span class="flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-sm {% if match.home_team.is_manchester_united %}bg-[var(--color-mu)]{% else %}bg-amber-500{% endif %}"></span>{{ match.home_team.short_name|default:match.home_team.name }}</span>
+      <span class="flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-sm {% if match.away_team.is_manchester_united %}bg-[var(--color-mu)]{% else %}bg-amber-500{% endif %}"></span>{{ match.away_team.short_name|default:match.away_team.name }}</span>
+    </div>
+  </div>
+  <p class="mb-4 text-xs text-gray-600">Dihitung dari play-by-play: tiap kejadian dibobot menurut bahayanya & jarak ke gawang.</p>
+
+  <!-- Penanda gol/kartu diposisikan pakai persen menit, sejajar sama area
+       plot chart yang sumbu Y-nya sengaja disembunyiin biar full-width. -->
+  <div class="relative mb-1 h-5">
+    {% for mk in momentum_markers %}
+    <span class="absolute -translate-x-1/2 text-xs" style="left: {% widthratio mk.minute momentum_max_minute 100 %}%" title="{{ mk.label }}">{{ mk.icon }}</span>
+    {% endfor %}
+  </div>
+
+  <!-- Tinggi dikunci di wrapper: maintainAspectRatio:false bikin canvas
+       ngikutin tinggi container, dan container tanpa tinggi bakal melar. -->
+  <div class="relative h-44">
+    <canvas id="momentumChart"></canvas>
+  </div>
+
+  <div class="mt-1 flex justify-between text-[11px] text-gray-600">
+    <span>0'</span><span>15'</span><span>30'</span><span>45'</span><span>60'</span><span>75'</span><span>90'</span>
+  </div>
+</div>
+
+{{ momentum_minutes|json_script:"momentum-minutes" }}
+{{ momentum_values|json_script:"momentum-values" }}
+<script>
+  const momentumMinutes = JSON.parse(document.getElementById('momentum-minutes').textContent);
+  const momentumValues = JSON.parse(document.getElementById('momentum-values').textContent);
+
+  new Chart(document.getElementById('momentumChart'), {
+    type: 'bar',
+    data: {
+      labels: momentumMinutes,
+      datasets: [{
+        data: momentumValues,
+        // Positif = tuan rumah, negatif = tamu — tapi warnanya ngikut MU
+        // (selalu merah) biar konsisten sama halaman lain, bukan ngikut
+        // sisi kandang/tandang.
+        backgroundColor: (ctx) => {
+          const homeIsMu = {{ match.home_team.is_manchester_united|yesno:"true,false" }};
+          const isHomeBar = ctx.raw >= 0;
+          return isHomeBar === homeIsMu ? '#da020e' : '#f59e0b';
+        },
+        borderWidth: 0,
+        barPercentage: 1,
+        categoryPercentage: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: 0 },
+      scales: {
+        x: { display: false, stacked: true },
+        y: { display: false, min: -100, max: 100 },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => `Menit ${items[0].label}'`,
+            label: (item) => {
+              const v = item.raw;
+              const team = v >= 0
+                ? '{{ match.home_team.short_name|default:match.home_team.name|escapejs }}'
+                : '{{ match.away_team.short_name|default:match.away_team.name|escapejs }}';
+              return `${team} · tekanan ${Math.abs(v).toFixed(0)}`;
+            },
+          },
+        },
+      },
+    },
+  });
+</script>
+{% endif %}
 
 {% if has_stats %}
 <div class="card mb-6 p-5">
@@ -63,8 +156,10 @@
     data: {
       labels: statLabels,
       datasets: [
-        { label: '{{ match.home_team.short_name|default:match.home_team.name|escapejs }}', data: statHome, backgroundColor: '#da020e' },
-        { label: '{{ match.away_team.short_name|default:match.away_team.name|escapejs }}', data: statAway, backgroundColor: '#4b5563' },
+        // Warna ngikut MU (merah), bukan sisi kandang — biar sewarna sama
+        // grafik momentum di atasnya.
+        { label: '{{ match.home_team.short_name|default:match.home_team.name|escapejs }}', data: statHome, backgroundColor: '{% if match.home_team.is_manchester_united %}#da020e{% else %}#f59e0b{% endif %}' },
+        { label: '{{ match.away_team.short_name|default:match.away_team.name|escapejs }}', data: statAway, backgroundColor: '{% if match.away_team.is_manchester_united %}#da020e{% else %}#f59e0b{% endif %}' },
       ],
     },
     options: {
@@ -81,29 +176,38 @@
 {% endif %}
 
 <div class="card p-5">
-  <h2 class="mb-4 text-sm font-semibold text-[var(--color-text-strong)]">Jalannya Pertandingan</h2>
-  {% if events %}
-  <ul class="flex flex-col gap-1">
-    {% for e in events %}
-    <li class="flex items-center gap-3 border-b border-[var(--color-border)] py-2 text-sm last:border-0">
-      <span class="w-10 shrink-0 font-mono text-xs text-gray-500">
-        {{ e.minute }}{% if e.extra_minute %}+{{ e.extra_minute }}{% endif %}'
-      </span>
-      <span>
-        {% if e.event_type == 'GOAL' %}⚽{% elif e.event_type == 'CARD' %}🟨{% elif e.event_type == 'SUBST' %}🔄{% else %}📺{% endif %}
-      </span>
-      <span class="{% if e.team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-gray-300{% endif %}">
-        {% if e.event_type == 'GOAL' %}
-          {{ e.player.name|default:"?" }}{% if e.assist_player %} <span class="text-gray-500">(assist: {{ e.assist_player.name }})</span>{% endif %}
-        {% elif e.event_type == 'SUBST' %}
-          {{ e.player.name|default:"?" }}{% if e.assist_player %} <span class="text-gray-500">masuk gantiin {{ e.assist_player.name }}</span>{% endif %}
-        {% else %}
-          {{ e.player.name|default:e.detail }}
-        {% endif %}
-      </span>
-    </li>
+  <h2 class="mb-5 text-sm font-semibold text-[var(--color-text-strong)]">Jalannya Pertandingan</h2>
+  {% if timeline %}
+  <div class="mb-4 flex items-center justify-between text-xs font-medium">
+    <span class="{% if match.home_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-gray-400{% endif %}">{{ match.home_team.short_name|default:match.home_team.name }}</span>
+    <span class="{% if match.away_team.is_manchester_united %}text-[var(--color-mu)]{% else %}text-gray-400{% endif %}">{{ match.away_team.short_name|default:match.away_team.name }}</span>
+  </div>
+
+  <!-- Garis tengah jadi "tulang punggung" timeline; tiap baris nempel kiri
+       atau kanan sesuai tim, ala scoreboard live. -->
+  <ol class="relative before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-white/10">
+    {% for row in timeline %}
+      {% if row.kind == 'divider' %}
+      <li class="relative flex justify-center py-3">
+        <span class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs font-semibold text-gray-400">{{ row.label }}</span>
+      </li>
+      {% else %}
+      <!-- Grid 3 kolom (1fr / menit / 1fr) — bukan 2x w-1/2, biar badge menit
+           punya lebarnya sendiri dan nggak mendesak konten ke tengah. -->
+      <li class="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-1.5">
+        <div class="flex justify-end">
+          {% if row.is_home %}{% include "dashboard/_timeline_entry.html" with align="right" %}{% endif %}
+        </div>
+
+        <span class="z-10 rounded bg-[var(--color-surface)] px-1 font-mono text-[11px] leading-5 text-gray-500">{{ row.minute }}'</span>
+
+        <div class="flex justify-start">
+          {% if not row.is_home %}{% include "dashboard/_timeline_entry.html" with align="left" %}{% endif %}
+        </div>
+      </li>
+      {% endif %}
     {% endfor %}
-  </ul>
+  </ol>
   {% else %}
   <p class="text-sm text-gray-500">Belum ada data event buat match ini.</p>
   {% endif %}

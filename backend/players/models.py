@@ -12,6 +12,7 @@ class DataSource(models.TextChoices):
     ESPN = 'espn', 'ESPN'
     ESPN_COMMENTARY = 'espn_commentary', 'ESPN (parsed dari commentary teks)'
     PREMIER_LEAGUE = 'premier_league', 'Premier League (PulseLive)'
+    UNDERSTAT = 'understat', 'Understat (xG)'
 
 
 class Team(models.Model):

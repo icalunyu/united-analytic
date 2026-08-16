@@ -7,20 +7,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from matches.dedup import resolve_match
-from matches.models import Match, MatchEvent, MatchTeamStatistics
+from matches.models import Match, MatchEvent, MatchPlay, MatchTeamStatistics, PlayerMatchStatistics
 from matches.services import EspnClient, EspnError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
-
-# Match kecil (mis. friendly pramusim) sering nggak dapet `keyEvents`
-# terstruktur dari ESPN, cuma `commentary` teks bebas. Pola ini nge-parse
-# format standar komentator ESPN buat gol/kartu/substitusi.
-COMMENTARY_GOAL_RE = re.compile(r'^Goal!.*?\.\s*([^(]+?)\s*\(([^)]+)\)')
-COMMENTARY_CARD_RE = re.compile(
-    r'^([^(]+?)\s*\(([^)]+)\)\s+is shown the (?:second )?(?:yellow|red) card', re.IGNORECASE
-)
-COMMENTARY_SUB_RE = re.compile(r'^Substitution,\s*([^.]+)\.\s*([^(]+?)\s+replaces\s+([^.]+)\.')
-COMMENTARY_ASSIST_RE = re.compile(r'[Aa]ssisted by ([^.,]+)')
+from players.name_utils import team_names_match
 
 
 def _stable_id(name):
@@ -98,6 +89,8 @@ class Command(BaseCommand):
 
         processed = 0
         events_total = 0
+        plays_total = 0
+        players_total = 0
         fixtures_total = 0
         seen_ids = set()
 
@@ -148,16 +141,20 @@ class Command(BaseCommand):
                     )
                     continue
 
+                commentary = summary.get('commentary') or []
                 events_total += self._save_events(
-                    match, summary.get('keyEvents') or [], summary.get('commentary') or []
+                    match, summary.get('keyEvents') or [], commentary
                 )
+                plays_total += self._save_plays(match, commentary)
                 self._save_statistics(match, summary.get('boxscore') or {})
+                players_total += self._save_rosters(match, summary.get('rosters') or [])
                 processed += 1
 
         self.stdout.write(
             self.style.SUCCESS(
                 f'Selesai. {fixtures_total} fixture unik dari {len(slugs)} kompetisi, '
-                f'{processed} match selesai diproses, {events_total} event disimpan.'
+                f'{processed} match selesai diproses, {events_total} event, '
+                f'{plays_total} play, {players_total} statistik pemain disimpan.'
             )
         )
 
@@ -255,7 +252,10 @@ class Command(BaseCommand):
 
             minute, extra_minute = self._parse_clock((event.get('clock') or {}).get('displayValue'))
 
-            dedup_key = (event_type, minute, team.id)
+            # Nama pemain ikut jadi kunci: dalam 1 menit yang sama bisa ada
+            # beberapa substitusi buat tim yang sama (mis. 3 pemain sekaligus
+            # di menit 61), dan itu harus tetep kecatat semua.
+            dedup_key = (event_type, minute, team.id, player.id if player else None)
             seen.add(dedup_key)
 
             MatchEvent.objects.create(
@@ -270,20 +270,28 @@ class Command(BaseCommand):
             )
             count += 1
 
-        # Fallback: match kecil sering nggak dapet keyEvents terstruktur,
-        # cuma commentary teks. Skip kalau minute+tipe+tim udah ke-cover
-        # dari keyEvents di atas.
+        # Fallback: match kecil sering nggak dapet keyEvents terstruktur, tapi
+        # commentary-nya tetep ada — dan tiap entri punya `play.type.type`
+        # (slug mesin) plus `play.participants`, jadi nggak perlu nebak-nebak
+        # dari kalimatnya. Skip yang udah ke-cover keyEvents di atas.
         for entry in commentary:
-            minute = self._commentary_minute(entry)
-            if minute is None:
+            play = entry.get('play') or {}
+            event_type = self._map_event_type((play.get('type') or {}).get('type', ''))
+            if event_type is None:
                 continue
 
-            parsed = self._parse_commentary_text(entry.get('text', ''), match)
-            if parsed is None:
+            team = self._team_by_name(match, (play.get('team') or {}).get('displayName'))
+            if team is None:
                 continue
-            event_type, team, player, assist_player = parsed
 
-            dedup_key = (event_type, minute, team.id)
+            minute, extra_minute = self._parse_clock((play.get('clock') or {}).get('displayValue'))
+            participants = play.get('participants') or []
+            player = self._resolve_commentary_player(self._participant_name(participants, 0), team)
+            assist_player = self._resolve_commentary_player(
+                self._participant_name(participants, 1), team
+            )
+
+            dedup_key = (event_type, minute, team.id, player.id if player else None)
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)
@@ -294,64 +302,87 @@ class Command(BaseCommand):
                 player=player,
                 assist_player=assist_player,
                 event_type=event_type,
-                detail=entry.get('text', '')[:150],
+                # Label pendek ('Goal - Header'), bukan kalimat commentary utuh.
+                detail=(play.get('type') or {}).get('text', '')[:150],
                 minute=minute,
+                extra_minute=extra_minute,
             )
             count += 1
 
         return count
 
+    def _save_plays(self, match, commentary):
+        """Simpen SELURUH play-by-play, bukan cuma yang layak masuk timeline.
+        Ini bahan mentah buat ngitung momentum serangan."""
+        MatchPlay.objects.filter(match=match).delete()
+
+        rows = {}
+        for entry in commentary:
+            play = entry.get('play') or {}
+            play_type = (play.get('type') or {}).get('type', '')
+            play_id = play.get('id')
+            # ESPN ngulang play yang sama di beberapa entri commentary dengan
+            # sequence beda — tanpa dedup per play.id, pelanggaran kehitung
+            # dobel dan momentumnya jadi ngaco.
+            if not play_type or not play_id or play_id in rows:
+                continue
+
+            team = self._team_by_name(match, (play.get('team') or {}).get('displayName'))
+            minute, extra_minute = self._parse_clock((play.get('clock') or {}).get('displayValue'))
+            participants = play.get('participants') or []
+            player = self._resolve_commentary_player(
+                self._participant_name(participants, 0), team
+            )
+
+            rows[play_id] = MatchPlay(
+                match=match,
+                team=team,
+                player=player,
+                external_id=str(play_id),
+                play_type=play_type,
+                text=play.get('text') or entry.get('text') or '',
+                minute=minute,
+                extra_minute=extra_minute,
+                period=(play.get('period') or {}).get('number'),
+                sequence=entry.get('sequence'),
+                # ESPN ngirim 0.0/0.0 buat kejadian yang nggak punya titik
+                # di lapangan (kartu, substitusi) — itu bukan pojok lapangan,
+                # itu "nggak ada data". Disimpen null biar nggak dihitung
+                # sebagai posisi beneran pas ngitung momentum.
+                field_x=self._nullable_position(play.get('fieldPositionX')),
+                field_y=self._nullable_position(play.get('fieldPositionY')),
+            )
+
+        MatchPlay.objects.bulk_create(rows.values())
+        return len(rows)
+
     @staticmethod
-    def _commentary_minute(entry):
-        display = (entry.get('time') or {}).get('displayValue')
-        if not display:
+    def _nullable_position(value):
+        if value in (None, 0, 0.0):
             return None
-        try:
-            return int(display.replace("'", '').split('+')[0])
-        except ValueError:
+        return value
+
+    @staticmethod
+    def _participant_name(participants, index):
+        if index >= len(participants):
             return None
-
-    def _parse_commentary_text(self, text, match):
-        m = COMMENTARY_GOAL_RE.match(text)
-        if m:
-            player_name, team_name = m.group(1).strip(), m.group(2).strip()
-            team = self._team_by_name(match, team_name)
-            player = self._resolve_commentary_player(player_name, team)
-            assist_match = COMMENTARY_ASSIST_RE.search(text)
-            assist_player = (
-                self._resolve_commentary_player(assist_match.group(1).strip(), team)
-                if assist_match
-                else None
-            )
-            return MatchEvent.EventType.GOAL, team, player, assist_player
-
-        m = COMMENTARY_CARD_RE.match(text)
-        if m:
-            player_name, team_name = m.group(1).strip(), m.group(2).strip()
-            team = self._team_by_name(match, team_name)
-            player = self._resolve_commentary_player(player_name, team)
-            return MatchEvent.EventType.CARD, team, player, None
-
-        m = COMMENTARY_SUB_RE.match(text)
-        if m:
-            team_name, player_in, player_out = (
-                m.group(1).strip(),
-                m.group(2).strip(),
-                m.group(3).strip(),
-            )
-            team = self._team_by_name(match, team_name)
-            player = self._resolve_commentary_player(player_in, team)
-            assist_player = self._resolve_commentary_player(player_out, team)
-            return MatchEvent.EventType.SUBSTITUTION, team, player, assist_player
-
-        return None
+        return ((participants[index] or {}).get('athlete') or {}).get('displayName')
 
     @staticmethod
     def _team_by_name(match, name):
-        name = name.strip().lower()
-        if match.away_team.name.strip().lower() == name:
-            return match.away_team
-        return match.home_team
+        """Cocokin nama tim dari commentary ke home/away match ini.
+
+        Commentary nulis nama agak beda dari nama resmi ('Brighton and Hove
+        Albion' vs 'Brighton & Hove Albion'), jadi pakai matcher yang sama
+        dengan sistem dedup. Return None kalau nggak yakin — jangan nebak
+        home_team, karena itu bikin event tim tamu salah atribusi.
+        """
+        if not name:
+            return None
+        for team in (match.home_team, match.away_team):
+            if team_names_match(team.name, name):
+                return team
+        return None
 
     @staticmethod
     def _resolve_commentary_player(name, team):
@@ -439,8 +470,94 @@ class Command(BaseCommand):
                     'passes_total': self._parse_stat_int(stats.get('totalPasses')),
                     'passes_accurate': self._parse_stat_int(stats.get('accuratePasses')),
                     'saves': self._parse_stat_int(stats.get('saves')),
+                    'shots_blocked': self._parse_stat_int(stats.get('blockedShots')),
+                    'crosses_total': self._parse_stat_int(stats.get('totalCrosses')),
+                    'crosses_accurate': self._parse_stat_int(stats.get('accurateCrosses')),
+                    'long_balls_total': self._parse_stat_int(stats.get('totalLongBalls')),
+                    'long_balls_accurate': self._parse_stat_int(stats.get('accurateLongBalls')),
+                    'tackles_total': self._parse_stat_int(stats.get('totalTackles')),
+                    'tackles_won': self._parse_stat_int(stats.get('effectiveTackles')),
+                    'interceptions': self._parse_stat_int(stats.get('interceptions')),
+                    'clearances_total': self._parse_stat_int(stats.get('totalClearance')),
+                    'clearances_effective': self._parse_stat_int(stats.get('effectiveClearance')),
+                    'penalty_goals': self._parse_stat_int(stats.get('penaltyKickGoals')),
+                    'penalty_shots': self._parse_stat_int(stats.get('penaltyKickShots')),
                 },
             )
+
+    # Nama stat ESPN -> nama field PlayerMatchStatistics.
+    _PLAYER_STAT_FIELDS = {
+        'totalGoals': 'goals',
+        'goalAssists': 'assists',
+        'totalShots': 'shots_total',
+        'shotsOnTarget': 'shots_on_target',
+        'ownGoals': 'own_goals',
+        'foulsCommitted': 'fouls_committed',
+        'foulsSuffered': 'fouls_suffered',
+        'offsides': 'offsides',
+        'yellowCards': 'yellow_cards',
+        'redCards': 'red_cards',
+        'saves': 'saves',
+        'shotsFaced': 'shots_faced',
+        'goalsConceded': 'goals_conceded',
+    }
+
+    def _save_rosters(self, match, rosters):
+        """Simpen formasi awal + statistik tiap pemain di match ini."""
+        saved = 0
+        for roster in rosters or []:
+            team_data = roster.get('team') or {}
+            if not team_data.get('id'):
+                continue
+
+            team, _ = resolve_team(
+                source=DataSource.ESPN,
+                external_id=int(team_data['id']),
+                defaults={'name': team_data.get('displayName', '')},
+            )
+
+            formation = roster.get('formation') or ''
+            if formation:
+                field = (
+                    'home_formation' if team.id == match.home_team_id else 'away_formation'
+                )
+                Match.objects.filter(pk=match.pk).update(**{field: formation[:20]})
+
+            for entry in roster.get('roster') or []:
+                athlete = entry.get('athlete') or {}
+                if not athlete.get('id'):
+                    continue
+
+                player, _ = resolve_player(
+                    source=DataSource.ESPN,
+                    external_id=int(athlete['id']),
+                    team=team,
+                    defaults={'name': athlete.get('displayName', ''), 'team': team},
+                )
+
+                stats = {s.get('name'): s.get('displayValue') for s in entry.get('stats') or []}
+                defaults = {
+                    field: self._parse_stat_int(stats.get(espn_name))
+                    for espn_name, field in self._PLAYER_STAT_FIELDS.items()
+                }
+                defaults.update(
+                    {
+                        'team': team,
+                        'starter': bool(entry.get('starter')),
+                        # formationPlace '0' artinya cadangan, bukan posisi 0.
+                        'formation_place': self._parse_stat_int(entry.get('formationPlace')) or None,
+                        'shirt_number': self._parse_stat_int(entry.get('jersey')),
+                        'subbed_in': bool(entry.get('subbedIn')),
+                        'subbed_out': bool(entry.get('subbedOut')),
+                    }
+                )
+
+                PlayerMatchStatistics.objects.update_or_create(
+                    match=match, player=player, defaults=defaults
+                )
+                saved += 1
+
+        return saved
 
     @staticmethod
     def _parse_stat_int(value):
