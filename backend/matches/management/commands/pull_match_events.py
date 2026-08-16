@@ -156,21 +156,23 @@ class Command(BaseCommand):
             )
 
             player = None
-            if event.get('playerId'):
+            player_name = event.get('player') or ''
+            if event.get('playerId') and player_name:
                 player, _ = resolve_player(
                     source=DataSource.HIGHLIGHTLY,
                     external_id=event['playerId'],
                     team=team,
-                    defaults={'name': event.get('player', ''), 'team': team},
+                    defaults={'name': player_name, 'team': team},
                 )
 
             assist_player = None
-            if event.get('assistingPlayerId'):
+            assist_name = event.get('assist') or ''
+            if event.get('assistingPlayerId') and assist_name:
                 assist_player, _ = resolve_player(
                     source=DataSource.HIGHLIGHTLY,
                     external_id=event['assistingPlayerId'],
                     team=team,
-                    defaults={'name': event.get('assist', ''), 'team': team},
+                    defaults={'name': assist_name, 'team': team},
                 )
 
             minute, extra_minute = self._parse_time(event.get('time'))
