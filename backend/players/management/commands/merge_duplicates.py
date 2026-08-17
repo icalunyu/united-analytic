@@ -16,8 +16,8 @@ from collections import defaultdict
 
 from django.apps import apps
 from django.core.management.base import BaseCommand
-from django.db import IntegrityError, transaction
 
+from players.merge_utils import absorb
 from players.models import Player, Team
 from players.name_utils import fold_accents, normalize_team_name
 
@@ -156,37 +156,15 @@ class Command(BaseCommand):
         return ordered[0], ordered[1:]
 
     def _absorb(self, loser, canonical):
-        """Pindahin semua yang nunjuk ke `loser` supaya nunjuk ke `canonical`,
-        lalu hapus `loser`."""
-        model = type(loser)
-        with transaction.atomic():
-            for rel in model._meta.related_objects:
-                field_name = rel.field.name
-                related_model = rel.related_model
-                rows = related_model.objects.filter(**{field_name: loser})
-
-                for row in rows:
-                    setattr(row, field_name, canonical)
-                    try:
-                        # Savepoint per baris: bentrok unique constraint itu
-                        # hal yang diharapkan (mis. dua row PlayerMatchStatistics
-                        # buat match yang sama), bukan error fatal.
-                        with transaction.atomic():
-                            row.save(update_fields=[rel.field.attname])
-                    except IntegrityError:
-                        # canonical udah punya baris setara buat kunci yang
-                        # sama — punya loser tinggal dibuang.
-                        row.delete()
-
-            self._drop_self_matches(loser, canonical)
-            loser.delete()
+        is_team = isinstance(loser, Team)
+        absorb(loser, canonical)
+        if is_team:
+            self._drop_self_matches(canonical)
 
     @staticmethod
-    def _drop_self_matches(loser, canonical):
+    def _drop_self_matches(canonical):
         """Kalau 2 tim yang digabung pernah ketemu satu sama lain, hasil
         penggabungannya jadi match lawan diri sendiri — itu artefak duplikasi,
         bukan pertandingan beneran."""
-        if not isinstance(loser, Team):
-            return
         Match = apps.get_model('matches', 'Match')
         Match.objects.filter(home_team=canonical, away_team=canonical).delete()
