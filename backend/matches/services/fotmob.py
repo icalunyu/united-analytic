@@ -56,6 +56,23 @@ class FotMobClient:
         overview = payload.get('overview') or {}
         return overview.get('overviewFixtures') or []
 
+    def get_league_fixtures(self, league_id=None, season=None):
+        """Seluruh fixture 1 liga dalam SATU panggilan.
+
+        Buat Premier League ini 380 laga berikut id dan status — jadi ongkos
+        buat tahu laga mana yang baru selesai itu satu request, bukan 380.
+
+        `season` formatnya '2025/2026'. Tanpa itu yang kebaca musim berjalan,
+        yang di awal musim isinya masih kosong — buat tolok ukur se-liga
+        justru musim lalu yang dibutuhin.
+        """
+        league_id = league_id or settings.FOTMOB_PL_LEAGUE_ID
+        params = {'id': league_id, 'type': 'league'}
+        if season:
+            params['season'] = season
+        payload = self._get('api/data/leagues', params)
+        return ((payload.get('fixtures') or {}).get('allMatches')) or []
+
     def get_match(self, match_id):
         """Detail 1 laga: playerStats, stats tim per babak, shotmap, momentum."""
         return self._get('api/data/matchDetails', {'matchId': match_id})

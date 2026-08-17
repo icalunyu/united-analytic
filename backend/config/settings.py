@@ -238,6 +238,9 @@ ESPN_COMPETITION_SLUGS = os.environ.get(
 
 FOTMOB_BASE_URL = os.environ.get('FOTMOB_BASE_URL', 'https://www.fotmob.com')
 FOTMOB_MU_TEAM_ID = os.environ.get('FOTMOB_MU_TEAM_ID', '10260')
+# ID Premier League di FotMob. Dipakai buat narik seluruh fixture liga dalam
+# satu panggilan — bahan tolok ukur se-liga (persentil posisi, peringkat).
+FOTMOB_PL_LEAGUE_ID = os.environ.get('FOTMOB_PL_LEAGUE_ID', '47')
 
 
 # Understat — satu-satunya sumber xG gratis yang cover Premier League.

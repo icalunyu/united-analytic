@@ -123,6 +123,17 @@ class Command(BaseCommand):
             action='store_true',
             help='Tarik ulang laga yang sudah pernah ditarik (default: dilewati).',
         )
+        parser.add_argument(
+            '--league',
+            action='store_true',
+            help='Seluruh Premier League, bukan cuma laga MU. Bahan tolok ukur se-liga.',
+        )
+        parser.add_argument(
+            '--season',
+            type=str,
+            default=None,
+            help="Format '2025/2026'. Cuma dipakai bareng --league.",
+        )
 
     def handle(self, *args, **options):
         client = FotMobClient()
@@ -131,7 +142,11 @@ class Command(BaseCommand):
             fixture_ids = [options['match_id']]
         else:
             try:
-                fixtures = client.get_team_fixtures(options['team_id'])
+                fixtures = (
+                    client.get_league_fixtures(season=options['season'])
+                    if options['league']
+                    else client.get_team_fixtures(options['team_id'])
+                )
             except FotMobError as exc:
                 self.stdout.write(self.style.ERROR(f'Gagal narik daftar laga: {exc}'))
                 return
@@ -139,8 +154,11 @@ class Command(BaseCommand):
             fixture_ids = [
                 f['id'] for f in fixtures if (f.get('status') or {}).get('finished')
             ]
+            # Urut dari yang terbaru: kalau backfill-nya dipotong --limit atau
+            # kena masalah di tengah, yang paling relevan udah masuk duluan.
+            fixture_ids.reverse()
             if options['limit']:
-                fixture_ids = fixture_ids[-options['limit']:]
+                fixture_ids = fixture_ids[: options['limit']]
 
         self.stdout.write(f'{len(fixture_ids)} laga selesai bakal diproses')
 
@@ -236,13 +254,34 @@ class Command(BaseCommand):
             datetime.strptime(kickoff[:19], '%Y-%m-%dT%H:%M:%S'), dt_timezone.utc
         )
 
+        # Buat laga MU, skor biasanya udah diisi ESPN/football-data. Buat laga
+        # liga lain nggak ada provider lain yang nyentuh — kalau nggak diisi di
+        # sini, hasilnya Match tanpa skor dan tanpa status.
+        header = detail.get('header') or {}
+        defaults = {}
+        scores = [t.get('score') for t in (header.get('teams') or [])]
+        if len(scores) == 2 and all(s is not None for s in scores):
+            defaults['home_score'], defaults['away_score'] = scores[0], scores[1]
+
+        status = header.get('status') or {}
+        if status.get('cancelled'):
+            defaults['status'] = Match.Status.CANCELLED
+        elif status.get('finished'):
+            defaults['status'] = Match.Status.FINISHED
+        elif status.get('started'):
+            defaults['status'] = Match.Status.LIVE
+
+        league = (general.get('leagueName') or '')[:150]
+        if league:
+            defaults['league_name'] = league
+
         match, _ = resolve_match(
             source=DataSource.FOTMOB,
             external_id=int(general['matchId']),
             home_team=home_team,
             away_team=away_team,
             kickoff_at=kickoff_at,
-            defaults={},
+            defaults=defaults,
         )
         return match
 
