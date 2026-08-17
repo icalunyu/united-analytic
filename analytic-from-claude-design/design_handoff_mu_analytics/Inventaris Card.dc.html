@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#0A0B0D; color:#E8E9EB; }
+  a { color:#D6263A; text-decoration:none; }
+  a:hover { color:#F2495C; }
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0A0B0D;font-family:Barlow,sans-serif;padding:0 0 60px">
+
+  <div style="position:sticky;top:0;z-index:10;background:#0E0F12;border-bottom:1px solid rgba(255,255,255,.07);padding:14px 32px;display:flex;align-items:baseline;gap:16px">
+    <div style="font:700 16px/1 'Barlow Condensed',sans-serif;letter-spacing:.08em;text-transform:uppercase">Inventaris Card</div>
+    <div style="font:500 11px/1 'JetBrains Mono',monospace;color:#868C96">MU Analytics Console · spesifikasi data per card</div>
+    <div style="margin-left:auto;font:500 10px/1 'JetBrains Mono',monospace;color:#5A616B">{{ total }} card · 9 kelompok</div>
+  </div>
+
+  <div style="max-width:1080px;margin:0 auto;padding:26px 32px 0">
+
+    <div style="background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;padding:20px;margin-bottom:14px">
+      <div style="font:700 15px/1 'Barlow Condensed',sans-serif;letter-spacing:.13em;text-transform:uppercase;margin-bottom:10px">Cara pakai dokumen ini</div>
+      <div style="font:400 13.5px/1.6 Barlow,sans-serif;color:#B9C0C9;max-width:760px;margin-bottom:16px">Tiap card di app punya satu entri di sini. Entri berisi apa card itu, varian tampilannya, dan rumus datanya dalam tiga bagian: data mentah yang dibutuhkan, langkah pengolahan, dan angka jadi yang tampil di layar. Bagian rumus ditulis supaya bisa langsung diterjemahkan jadi query dan fungsi tanpa menebak maksudnya.</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+        <sc-for list="{{ legend }}" as="l" hint-placeholder-count="6">
+          <div style="padding:11px 13px;background:#0E0F12;border-radius:4px;display:flex;gap:12px;align-items:baseline">
+            <div style="flex:none;font:700 11px/1 'JetBrains Mono',monospace;color:#D6263A;width:64px">{{ l.k }}</div>
+            <div style="flex:1;font:400 12px/1.45 Barlow,sans-serif;color:#9AA1AB">{{ l.v }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <sc-for list="{{ groups }}" as="g" hint-placeholder-count="9">
+      <div style="margin-top:30px">
+        <div style="display:flex;align-items:baseline;gap:13px;padding-bottom:11px;margin-bottom:14px;border-bottom:2px solid #D6263A">
+          <div style="font:700 20px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">{{ g.title }}</div>
+          <div style="font:400 12px/1 Barlow,sans-serif;color:#7E858F">{{ g.sub }}</div>
+          <div style="margin-left:auto;font:500 10px/1 'JetBrains Mono',monospace;color:#5A616B">{{ g.count }}</div>
+        </div>
+
+        <sc-for list="{{ g.cards }}" as="c" hint-placeholder-count="4">
+          <div style="background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;padding:18px 20px;margin-bottom:12px">
+            <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:11px;flex-wrap:wrap">
+              <div style="flex:none;padding:4px 8px;border-radius:3px;background:rgba(214,38,58,.14);font:700 10px/1 'JetBrains Mono',monospace;color:#F2495C">{{ c.id }}</div>
+              <div style="font:700 17px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.06em;text-transform:uppercase">{{ c.name }}</div>
+              <div style="font:500 10px/1 'JetBrains Mono',monospace;color:#5A616B">{{ c.slot }}</div>
+            </div>
+
+            <div style="font:400 13.5px/1.6 Barlow,sans-serif;color:#B9C0C9;max-width:800px;margin-bottom:13px">{{ c.what }}</div>
+
+            <div style="margin-bottom:14px">
+              <div style="font:600 9px/1 'Barlow Condensed',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#7E858F;margin-bottom:8px">Varian</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <sc-for list="{{ c.variants }}" as="v" hint-placeholder-count="3">
+                  <div style="padding:5px 9px;border:1px solid rgba(255,255,255,.12);border-radius:3px;font:500 11px/1 'JetBrains Mono',monospace;color:#C7CCD3">{{ v }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="background:#0E0F12;border-radius:4px;padding:14px 15px">
+              <div style="display:flex;gap:13px;margin-bottom:12px">
+                <div style="flex:none;width:74px;font:600 9px/1.3 'Barlow Condensed',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#3BD08C;padding-top:2px">Data<br>mentah</div>
+                <div style="flex:1;font:500 12px/1.6 'JetBrains Mono',monospace;color:#B9C0C9">{{ c.input }}</div>
+              </div>
+              <div style="display:flex;gap:13px;margin-bottom:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.05)">
+                <div style="flex:none;width:74px;font:600 9px/1.3 'Barlow Condensed',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#E4B84A;padding-top:2px">Diapain</div>
+                <div style="flex:1">
+                  <sc-for list="{{ c.steps }}" as="s" hint-placeholder-count="3">
+                    <div style="display:flex;gap:9px;margin-bottom:7px">
+                      <div style="flex:none;font:700 10px/1.6 'JetBrains Mono',monospace;color:#5A616B">{{ s.n }}</div>
+                      <div style="flex:1;font:500 12px/1.6 'JetBrains Mono',monospace;color:#C7CCD3">{{ s.t }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex;gap:13px;padding-top:12px;border-top:1px solid rgba(255,255,255,.05)">
+                <div style="flex:none;width:74px;font:600 9px/1.3 'Barlow Condensed',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#7C9FF5;padding-top:2px">Yang<br>tampil</div>
+                <div style="flex:1;font:500 12px/1.6 'JetBrains Mono',monospace;color:#B9C0C9">{{ c.output }}</div>
+              </div>
+            </div>
+
+            <sc-if value="{{ c.hasNote }}">
+              <div style="margin-top:12px;padding:11px 13px;border-left:2px solid #E4B84A;background:rgba(228,184,74,.05);font:400 12.5px/1.55 Barlow,sans-serif;color:#C7A55E">{{ c.note }}</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1180,&quot;height&quot;:900}}">
+const G = [
+  {
+    title: 'Kerangka Umum',
+    sub: 'ada di semua halaman',
+    cards: [
+      {
+        id: 'GL-01', name: 'Rail Navigasi', slot: 'kolom kiri, lebar tetap',
+        what: 'Tujuh tujuan yang mengikuti alur kerja analis, bukan urutan menu biasa: Live, Pra, Pasca, Bursa, Skuad, Statistik, Berita. Live ditaruh paling atas karena itu satu-satunya halaman yang dipakai sambil siaran berjalan.',
+        variants: ['aktif (garis merah kiri)', 'tidak aktif', 'hover'],
+        input: 'route aplikasi',
+        steps: ['satu state view menentukan halaman mana yang dirender', 'badge Live ikut status feed pertandingan'],
+        output: 'ikon + label, penanda merah di halaman aktif'
+      },
+      {
+        id: 'GL-02', name: 'Bar Status Atas', slot: 'sticky, tinggi 52px',
+        what: 'Menjawab dua hal sepanjang waktu: sedang di halaman apa, dan apakah ada pertandingan berjalan. Titik merah berdenyut berarti feed laga hidup, titik abu berarti tidak ada laga.',
+        variants: ['Live (merah berdenyut)', 'Idle (abu)'],
+        input: 'A: status pertandingan hari ini · heartbeat feed live',
+        steps: ['cek ada fixture berstatus 1H/HT/2H/ET/PEN', 'kalau ada, cek heartbeat feed < 30 detik', 'dua kondisi terpenuhi = Live, selain itu Idle'],
+        output: 'label halaman + indikator Live/Idle'
+      }
+    ]
+  },
+  {
+    title: 'Live · Tidak Ada Laga',
+    sub: 'halaman Live saat tidak ada pertandingan berjalan',
+    cards: [
+      {
+        id: 'LI-01', name: 'Kartu Laga Berikutnya', slot: 'hero, paling atas',
+        what: 'Hitung mundur ke kick-off terdekat beserta lawan, kompetisi, dan tempat. Ini yang pertama dicari saat membuka app di hari biasa: kapan kerja berikutnya dimulai.',
+        variants: ['lebih dari 24 jam (angka abu)', 'kurang dari 24 jam (angka merah)', 'kurang dari 2 jam (merah berdenyut)'],
+        input: 'A: fixtures (kickoff_utc, kompetisi, matchday, venue, home_away, lawan) · waktu server',
+        steps: ['ambil fixture dengan kickoff paling dekat yang masih di depan waktu sekarang',
+                'selisih = kickoff − sekarang, lalu pecah jadi hari dan jam (dibulatkan ke bawah)',
+                'konversi kickoff ke WIB untuk ditampilkan',
+                'ambang warna: >24 jam abu, 2-24 jam merah, <2 jam merah berdenyut'],
+        output: 'nama lawan, kompetisi + matchday, stadion, jam WIB, hitung mundur besar'
+      },
+      {
+        id: 'LI-02', name: 'Persiapan Divisi', slot: 'kolom utama, di bawah hero',
+        what: 'Daftar pekerjaan yang harus beres sebelum nobar. Tiap baris punya badge SISTEM kalau app bisa memastikannya sendiri, atau MANUAL kalau harus ada orang yang mengerjakannya, plus tombol lompat ke halaman tempat pekerjaan itu diselesaikan.',
+        variants: ['badge SISTEM (hijau)', 'badge MANUAL (kuning)', 'sudah beres', 'belum beres'],
+        input: 'tabel prediksi pra-laga (ada/tidak, updated_at) · opponent_profile.updated_at · fixtures lawan · saved_moments (dipakai_at) · konflik status skuad yang belum diputuskan',
+        steps: ['tiap baris punya satu predikat benar/salah yang dihitung dari kolom di atas',
+                'prediksi: ada baris untuk fixture ini dan updated_at lebih baru dari perubahan skuad terakhir',
+                'profil lawan: updated_at lebih baru dari kick-off laga kelima terakhir lawan',
+                'bahan laga lalu: hitung saved_moments match sebelumnya yang dipakai_at masih kosong',
+                'status pemain: hitung konflik sumber yang belum dipilih analis',
+                'predikat salah tampil kuning dan menaikkan urutannya ke atas'],
+        output: '3-4 baris kesiapan, badge sumber pekerjaan, tombol ke halaman terkait'
+      },
+      {
+        id: 'LI-03', name: 'Jadwal Berikutnya', slot: 'kolom utama',
+        what: 'Tiga laga di depan supaya bisa mengatur jadwal siaran dan konten satu pekan ke depan. Laga terdekat ditandai merah.',
+        variants: ['laga terdekat (garis merah)', 'laga berikutnya (garis netral)'],
+        input: 'A: fixtures',
+        steps: ['filter kickoff > sekarang', 'urut naik, ambil tiga teratas', 'format tanggal Indonesia + jam WIB', 'label kandang/tandang dari home_away'],
+        output: 'tanggal, lawan, kandang/tandang, kompetisi'
+      },
+      {
+        id: 'LI-04', name: 'Kesiapan Data', slot: 'kolom kanan',
+        what: 'Ringkasan sehat atau tidaknya tiap sumber data, dicek otomatis tiap jam. Gunanya supaya sumber mati ketahuan sehari sebelumnya, bukan saat siaran sudah jalan.',
+        variants: ['ok (hijau)', 'ada jeda (kuning)', 'berhenti kirim data (merah)'],
+        input: 'log heartbeat per sumber: last_success_at, expected_interval, error terakhir',
+        steps: ['lag = sekarang − last_success_at',
+                'lag < 1x interval = ok, 1-3x = ada jeda, lebih dari 3x = berhenti',
+                'sumber berhenti ditandai merah dan angka turunannya diberi flag jangan_dipakai'],
+        output: 'titik warna + nama sumber + umur data terakhir'
+      },
+      {
+        id: 'LI-05', name: 'Hasil Terakhir', slot: 'kolom kanan',
+        what: 'Skor laga terakhir dengan xG kedua tim, plus lima hasil terakhir. Konteks singkat sebelum bicara laga berikutnya.',
+        variants: ['menang', 'imbang', 'kalah'],
+        input: 'A: fixture berstatus FT terakhir (skor) · C: xG tim per laga',
+        steps: ['ambil laga FT paling baru', 'ambil xG kedua tim dari model', 'bentuk deret 5 hasil terakhir jadi rangkaian M/S/K'],
+        output: 'skor, lawan, xG kedua tim, deret lima hasil'
+      }
+    ]
+  },
+  {
+    title: 'Live · Laga Berjalan',
+    sub: 'halaman Live saat pertandingan hidup',
+    cards: [
+      {
+        id: 'LV-01', name: 'Strip Skor', slot: 'paling atas, penuh',
+        what: 'Skor, xG kedua tim, menit berjalan, dan bar momentum. Ditaruh paling atas karena ini satu-satunya baris yang boleh dilihat tanpa berpikir saat sedang bicara di depan kamera.',
+        variants: ['babak pertama', 'babak kedua', 'extra time', 'adu penalti'],
+        input: 'A: skor & menit · B: event tembakan (x, y, jenis, pemain) · C: model xG per tembakan',
+        steps: ['xG tim = jumlah xG semua tembakan tim itu sampai menit sekarang',
+                'momentum = jumlah xT semua aksi dalam jendela 5 menit terakhir, dipisah per tim',
+                'lebar bar momentum = xT tim / (xT kedua tim), dinormalkan ke 100 persen',
+                'menit diambil dari feed, bukan dihitung sendiri, supaya tidak melenceng saat ada tambahan waktu'],
+        output: 'skor, xG dua angka, menit, bar momentum dua sisi'
+      },
+      {
+        id: 'LV-02', name: 'Banner Jeda', slot: 'menggantikan strip saat jeda',
+        what: 'Saat jeda, layar berhenti mengejar event dan berganti jadi ringkasan babak yang baru selesai: lima angka penentu dan hitung mundur ke babak berikutnya. Jeda adalah waktu bicara paling panjang dalam siaran, jadi tampilannya dibuat untuk dibaca, bukan dipantau.',
+        variants: ['jeda babak pertama (15 menit)', 'jeda sebelum extra time (5 menit)', 'jeda antar babak extra time'],
+        input: 'B: seluruh event babak yang baru selesai · C: xG, xT · statistik musim United sebagai pembanding',
+        steps: ['hitung semua metrik babak ini untuk kedua tim',
+                'bandingkan tiap metrik dengan rata-rata musim United, ambil selisih dalam satuan simpangan baku',
+                'ambil lima metrik dengan selisih terbesar, itu yang paling layak dibicarakan',
+                'hitung mundur = jadwal babak berikutnya − sekarang, mundur dari durasi jeda resmi'],
+        output: 'judul fase, hitung mundur, lima angka penentu, tombol buka Game Highlights'
+      },
+      {
+        id: 'LV-03', name: 'Bahan Pundit', slot: 'kolom kiri, bisa digulir',
+        what: 'Aliran kartu temuan yang muncul otomatis saat ada pola terdeteksi. Tiap kartu berisi satu klaim, angka pendukungnya, dan sumber datanya, siap dibacakan tanpa diolah lagi. Kolom kiri karena ini yang dibaca terus-menerus sepanjang laga.',
+        variants: ['tag POLA', 'tag BEBAN', 'tag TEMPO', 'tag BOLA MATI', 'tag PRESSING', 'filter per tag', 'sumber A / B / C / manual'],
+        input: 'B: aliran event laga · C: xG, xT · A: menit 14 hari per pemain · tag manual dari analis',
+        steps: ['tiap detektor berjalan setiap event masuk, satu detektor untuk satu jenis temuan',
+                'detektor pola: satu rangkaian aksi berulang minimal 2 kali dalam 15 menit',
+                'detektor beban: pemain di lapangan yang menit 14 harinya melewati 380',
+                'detektor tempo: perubahan umpan per menit lebih dari 15 persen antar jendela 10 menit',
+                'detektor bola mati: 3 dari 4 situasi terakhir berujung tembakan',
+                'detektor pressing: PPDA jendela 15 menit di bawah 10',
+                'ambang terlewati = buat kartu {menit, tag, judul, kalimat, angka pendukung, kode sumber}',
+                'urut menit terbaru di atas, filter tag memotong daftar tanpa menghapus isinya'],
+        output: 'kartu bertag dengan kalimat siap ucap, angka pendukung, tombol Save dan Salin kalimat'
+      },
+      {
+        id: 'LV-04', name: 'Lapangan', slot: 'kolom tengah',
+        what: 'Peta posisi pemain dengan empat lapisan data yang bisa ditukar. Node pemain bisa diklik untuk membuka detail permainannya. Ditaruh di tengah karena ini yang paling sering ditunjuk saat menjelaskan sesuatu secara visual.',
+        variants: ['lapisan posisi rata-rata', 'lapisan jaringan umpan', 'lapisan sentuhan', 'lapisan tekanan', 'jendela 15 menit / sepanjang laga'],
+        input: 'B: event dengan koordinat x, y, pemain, jenis aksi · C: nilai xT per aksi',
+        steps: ['posisi node = median x dan y dari semua aksi pemain dalam jendela terpilih, median dipakai supaya satu aksi jauh tidak menggeser node',
+                'jaringan umpan: hitung jumlah umpan tiap pasangan pemain, ketebalan garis sebanding jumlahnya, minimal 3 umpan baru digambar',
+                'lapisan sentuhan: bagi lapangan jadi grid 6x9, hitung aksi per sel, warna dari jumlah relatif',
+                'lapisan tekanan: hitung aksi bertahan per sel, dipakai untuk melihat di mana tim menekan',
+                'arah serang selalu dari kiri ke kanan, koordinat sumber dibalik kalau perlu'],
+        output: 'lapangan dengan node bernomor, garis umpan, angka per sisi, node bisa diklik'
+      },
+      {
+        id: 'LV-05', name: 'Game Highlights', slot: 'kolom tengah, di bawah lapangan',
+        what: 'Klaim besar tentang jalannya laga, bukan kejadian tunggal. Tiap klaim menyebut berapa syarat buktinya yang sudah terpenuhi, dan bisa diklik untuk melihat rinciannya. Isinya berubah mengikuti fase laga.',
+        variants: ['bukti 3/3 (hijau, boleh disebut fakta)', 'bukti 2/3 (kuning, sebut sebagai dugaan)', 'set babak pertama', 'set jeda', 'set babak kedua', 'set menjelang extra time'],
+        input: 'hasil semua detektor LV-03 · ambang per syarat · fase laga',
+        steps: ['tiap klaim punya daftar syarat terukur, biasanya tiga, masing-masing dengan ambang tetap',
+                'evaluasi tiap syarat dari data laga yang sedang berjalan',
+                'kekuatan = jumlah syarat terpenuhi / jumlah syarat',
+                'semua terpenuhi = hijau dan boleh disampaikan sebagai fakta, kurang satu = kuning dan harus disampaikan sebagai dugaan',
+                'klaim yang syarat utamanya gagal tidak ditampilkan sama sekali'],
+        output: 'kartu klaim + kalimat bukti ringkas + rasio bukti, klik membuka MD-01'
+      },
+      {
+        id: 'LV-06', name: 'Skuad (live)', slot: 'kolom kanan',
+        what: 'Sebelas pemain di lapangan dengan kontribusi dan nilai berjalan. Nama bisa diklik untuk membuka detail yang sama seperti node lapangan.',
+        variants: ['di lapangan', 'sudah diganti', 'nilai naik', 'nilai turun'],
+        input: 'B: event per pemain · A: menit bermain',
+        steps: ['nilai dasar 6,0 untuk semua pemain',
+                'tambah bobot per aksi positif: gol, asis, peluang tercipta, umpan kunci, rebutan menang, penyelamatan',
+                'kurangi bobot per aksi negatif: kehilangan bola di area sendiri, duel kalah, peluang terbuang',
+                'bobot diskalakan per posisi supaya kiper dan penyerang tidak dinilai dengan patokan sama',
+                'nilai dibulatkan satu desimal, arah panah dari perbandingan nilai 15 menit lalu'],
+        output: 'nama, posisi, kontribusi utama, nilai, arah tren'
+      },
+      {
+        id: 'LV-07', name: 'Saved Moments (live)', slot: 'kolom kanan',
+        what: 'Kumpulan momen yang analis simpan saat laga berjalan, jadi bahan konten setelah laga. Tersimpan lengkap dengan menit dan sumbernya, dan otomatis muncul lagi di halaman Pasca laga yang sama.',
+        variants: ['kosong', 'ada isi', 'dari kartu pundit', 'dari klaim highlights'],
+        input: 'aksi Save analis',
+        steps: ['simpan baris {match_id, menit, teks, angka, kode sumber, asal_card, dibuat_at}',
+                'teks diambil apa adanya dari kartu asal supaya angka tidak berubah',
+                'jumlahnya dihitung dan tampil di judul kartu'],
+        output: 'daftar momen bermenit + jumlah tersimpan'
+      },
+      {
+        id: 'LV-08', name: 'Kandidat Rotasi', slot: 'kolom kanan',
+        what: 'Pemain yang paling layak diganti atau diistirahatkan, diurutkan dari yang paling mendesak. Berguna untuk komentar pergantian pemain dan untuk menebak susunan laga berikutnya.',
+        variants: ['mendesak (merah)', 'perlu diawasi (kuning)', 'aman'],
+        input: 'A: menit per laga 14 hari terakhir · A: fixtures 7 hari ke depan · D: riwayat cedera',
+        steps: ['beban = total menit 14 hari dibagi 450 sebagai patokan tiga laga penuh',
+                'kepadatan jadwal = 1 kalau ada laga dalam 4 hari, 0 kalau tidak',
+                'riwayat = 1 kalau pernah cedera otot dalam 6 bulan',
+                'skor = 0,5 x beban + 0,3 x kepadatan + 0,2 x riwayat',
+                'urut skor menurun, ambil tiga teratas yang masih di lapangan'],
+        output: 'nama, alasan singkat, menit 14 hari, tingkat kemendesakan'
+      }
+    ]
+  },
+  {
+    title: 'Pra Laga',
+    sub: 'bahan sebelum kick-off',
+    cards: [
+      {
+        id: 'PR-01', name: 'Bar Identitas Laga', slot: 'paling atas',
+        what: 'Menyebut dengan jelas laga mana yang sedang disiapkan: lawan, kompetisi, matchday, stadion, jam WIB, dan hitung mundur. Ada karena semua kartu di bawahnya tidak berarti tanpa konteks laganya.',
+        variants: ['sebelum kick-off', 'laga berjalan (berganti jadi mode cek prediksi)'],
+        input: 'A: fixture terpilih',
+        steps: ['fixture default = laga terdekat di depan', 'kalau ada laga berjalan, fixture itu yang dipakai', 'hitung mundur sama seperti LI-01'],
+        output: 'lawan, kompetisi + matchday, stadion, jam WIB, hitung mundur'
+      },
+      {
+        id: 'PR-02', name: 'Prediksi Susunan', slot: 'kolom utama',
+        what: 'Sebelas pemain yang paling mungkin diturunkan beserta keyakinan model. Ini bahan konten pra-laga yang paling sering dipakai tim socmed, dan setelah susunan resmi keluar dipakai untuk mengukur akurasi kita sendiri.',
+        variants: ['keyakinan tinggi (di atas 70 persen)', 'keyakinan sedang', 'sebelum susunan resmi', 'sesudah susunan resmi (menampilkan berapa yang tepat)'],
+        input: 'A: susunan 5 laga terakhir · A: menit 14 hari · D: status cedera dan skorsing · riwayat rotasi pelatih per kompetisi',
+        steps: ['buang pemain berstatus cedera, skorsing, atau tidak terdaftar',
+                'untuk tiap pemain hitung peluang = 0,45 x proporsi jadi starter dalam 5 laga + 0,25 x (1 − beban) + 0,20 x kesesuaian posisi + 0,10 x kecenderungan rotasi pelatih di kompetisi ini',
+                'beban memakai rumus yang sama dengan LV-08 supaya tidak ada dua definisi kelelahan',
+                'pilih pemain dengan peluang tertinggi per posisi sesuai formasi yang paling sering dipakai',
+                'keyakinan model = rata-rata peluang sebelas pemain terpilih',
+                'setelah susunan resmi terbit, bandingkan dan simpan jumlah yang tepat'],
+        output: 'formasi, sebelas nama dengan persentase, keyakinan model, dan skor akurasi setelah laga'
+      },
+      {
+        id: 'PR-03', name: 'Hipotesis Taktik', slot: 'kolom utama',
+        what: 'Tiga dugaan taktik dalam bentuk yang bisa diuji: satu peluang, satu cara menekan, satu tanda bahaya. Tiap kartu membawa rekam jejaknya sendiri, jadi jelas mana dugaan yang biasanya benar.',
+        variants: ['peluang (merah)', 'cara menekan (biru)', 'tanda bahaya (kuning)'],
+        input: '8 laga terakhir lawan · kelemahan United musim ini · rekam jejak hipotesis yang pernah dibuat',
+        steps: ['cari pola lawan yang muncul minimal 6 dari 8 laga, di bawah itu tidak dianggap pola',
+                'pasangkan pola lawan dengan metrik United di ranah yang sama untuk melihat siapa yang diuntungkan',
+                'akurasi = jumlah hipotesis serupa yang terbukti dibagi jumlah yang pernah dibuat, diambil dari riwayat',
+                'tanda bahaya dibuat dari kebalikannya: kekuatan lawan bertemu kelemahan United di persentil bawah'],
+        output: 'tiga kartu berisi dugaan, alasan berangka, frekuensi kemunculan, dan akurasi historis'
+      },
+      {
+        id: 'PR-04', name: 'Cek Prediksi', slot: 'kolom utama, hanya saat laga berjalan',
+        what: 'Saat laga sudah berjalan, halaman Pra berubah fungsi: bukan lagi tempat menyiapkan, tapi tempat menghitung mana dugaan kita yang terbukti. Ini bahan komentar paling kuat karena kita bisa bilang sudah menduga sebelum kick-off.',
+        variants: ['sedang berjalan (menit berapa)', 'selesai (skor akhir dugaan)'],
+        input: 'hipotesis PR-03 dan susunan PR-02 yang tersimpan · B: event laga berjalan',
+        steps: ['tiap hipotesis sudah menyimpan syarat terukurnya sejak dibuat',
+                'evaluasi syarat itu terhadap data laga yang sedang berjalan, bukan terhadap kesan',
+                'status per hipotesis: kena, belum, atau tidak terbukti',
+                'susunan: bandingkan sebelas prediksi dengan susunan resmi, sebut posisi yang berbeda'],
+        output: 'skor kena dari total, status tiap hipotesis, dan ketepatan susunan'
+      },
+      {
+        id: 'PR-05', name: 'Head to Head', slot: 'kolom utama',
+        what: 'Lima pertemuan terakhir dengan skor, tempat, dan xG. Dipakai untuk konteks sejarah tanpa harus mencari manual.',
+        variants: ['di tempat yang sama (ditandai)', 'di tempat berbeda'],
+        input: 'A: pertemuan dua tim · C: xG per laga',
+        steps: ['ambil 5 pertemuan terakhir semua kompetisi, urut terbaru',
+                'ringkas jadi menang-imbang-kalah dan agregat gol',
+                'tandai laga yang tempatnya sama dengan laga yang akan datang'],
+        output: 'lima baris pertemuan + ringkasan rekor'
+      },
+      {
+        id: 'PR-06', name: 'Pemain Kunci', slot: 'kolom utama',
+        what: 'Tiga pemain paling menentukan dari masing-masing tim, dipilih dari output per 90 menit dan bukan dari nama besar. Sering menghasilkan nama yang tidak diduga, dan itu justru bahan konten yang bagus.',
+        variants: ['pemain United', 'pemain lawan'],
+        input: 'C: statistik musim per 90 menit kedua tim · tolok ukur liga per posisi',
+        steps: ['ambil pemain dengan minimal 300 menit musim ini supaya angka per 90 tidak menipu',
+                'untuk tiap pemain hitung selisih dari rata-rata liga di posisinya, dalam satuan simpangan baku, pada metrik yang relevan untuk posisi itu',
+                'ambil tiga dengan selisih tertinggi per tim',
+                'sebutkan metrik penyebabnya, bukan hanya namanya'],
+        output: 'tiga nama per tim + metrik penentu + angka per 90'
+      },
+      {
+        id: 'PR-07', name: 'Profil Lawan', slot: 'kolom kanan',
+        what: 'Gaya main lawan dalam beberapa bar persentil: seberapa agresif menekan, seberapa banyak menguasai bola, ke sisi mana mereka menyerang, seberapa berbahaya dari bola mati.',
+        variants: ['di atas rata-rata liga', 'di bawah rata-rata liga'],
+        input: '5 laga terakhir lawan (B: event, C: xG) · sebaran metrik seluruh tim liga',
+        steps: ['hitung metrik gaya dari 5 laga terakhir: PPDA, penguasaan bola, persentase serangan per sisi, xG bola mati per laga, tinggi garis pertahanan',
+                'ubah tiap metrik jadi persentil terhadap seluruh tim di liga',
+                'panjang bar = persentil, jadi perbandingannya selalu relatif liga bukan angka mentah'],
+        output: 'enam bar persentil bernama + angka mentahnya'
+      },
+      {
+        id: 'PR-08', name: 'Duel Kunci', slot: 'kolom kanan',
+        what: 'Pasangan pemain yang wilayahnya akan bertemu, dengan selisih kualitas yang terukur. Ini yang biasanya jadi kalimat pembuka siaran.',
+        variants: ['keunggulan United', 'keunggulan lawan', 'seimbang'],
+        input: 'posisi rata-rata pemain kedua tim · metrik ofensif dan defensif per 90',
+        steps: ['cari pasangan pemain lawan yang zona rata-ratanya bertumpuk lebih dari separuh',
+                'bandingkan metrik ofensif pemain menyerang dengan metrik defensif pemain bertahan di zona itu',
+                'urut dari selisih terbesar, ambil tiga'],
+        output: 'tiga pasangan duel + angka kedua sisi + siapa yang diuntungkan'
+      },
+      {
+        id: 'PR-09', name: 'Fakta Pendukung', slot: 'kolom kanan',
+        what: 'Kumpulan fakta pelengkap untuk siaran dan caption: rangkaian hasil, rekor pertemuan, ambang yang hampir tercapai, angka ekstrem musim ini. Tiap fakta membawa sumbernya supaya tidak ada klaim tanpa dasar.',
+        variants: ['rangkaian aktif', 'ambang hampir tercapai', 'rekor pertemuan', 'angka ekstrem musim'],
+        input: 'A: riwayat hasil · C: statistik musim · A: rekor pertemuan',
+        steps: ['jalankan beberapa pencarian pola yang tetap: rangkaian tanpa kalah atau tanpa cetak gol yang masih hidup, pemain yang jaraknya 1-2 gol dari angka bulat, laga ke-100 dan sejenisnya, metrik yang berada di 3 teratas atau terbawah liga',
+                'tiap pola yang ketemu jadi satu baris fakta dengan angka dan sumber',
+                'buang fakta yang umurnya lebih dari satu pekan atau yang sudah dipakai di konten sebelumnya'],
+        output: 'daftar fakta satu baris + kode sumber tiap fakta'
+      }
+    ]
+  },
+  {
+    title: 'Pasca Laga',
+    sub: 'bahan konten setelah laga selesai',
+    cards: [
+      {
+        id: 'PS-01', name: 'Pemilih Laga', slot: 'paling atas',
+        what: 'Pemilih laga yang sudah selesai, tidak terbatas laga terakhir. Semua kartu di halaman ini mengikuti laga yang dipilih di sini, termasuk skor, tanggal, dan kompetisinya.',
+        variants: ['laga terakhir (default)', 'laga sebelumnya'],
+        input: 'A: semua fixture berstatus FT musim ini',
+        steps: ['urut dari terbaru', 'default ke laga terbaru', 'match_id terpilih diteruskan ke semua kartu di halaman ini'],
+        output: 'lawan, skor, tanggal, kompetisi, dan pemilih laga lain'
+      },
+      {
+        id: 'PS-02', name: 'Angka Penentu Pertandingan', slot: 'kolom utama',
+        what: 'Empat angka yang paling menjelaskan kenapa hasilnya begitu. Bukan empat angka yang selalu sama, tapi dipilih ulang tiap laga berdasarkan mana yang paling menyimpang.',
+        variants: ['menguntungkan United (hijau)', 'merugikan (merah)', 'netral'],
+        input: 'B: seluruh event laga · C: xG dan xT · statistik rata-rata musim United',
+        steps: ['hitung sekitar 20 metrik penuh untuk kedua tim',
+                'untuk tiap metrik hitung selisih dari rata-rata musim United dalam satuan simpangan baku',
+                'ambil empat dengan nilai mutlak selisih terbesar',
+                'beri arah: angka yang menguntungkan hijau, merugikan merah'],
+        output: 'empat angka besar + label + pembanding rata-rata musim'
+      },
+      {
+        id: 'PS-03', name: 'Nilai Pemain', slot: 'kolom utama',
+        what: 'Nilai akhir sebelas pemain plus pengganti, dengan rumus yang sama seperti versi live tapi dihitung penuh 90 menit. Pemain terbaik dan terburuk ditandai.',
+        variants: ['tertinggi (ditandai)', 'terendah (ditandai)', 'pemain pengganti (nilai disesuaikan menit)'],
+        input: 'B: event akhir laga per pemain · A: menit bermain',
+        steps: ['pakai bobot event yang sama dengan LV-06',
+                'pemain dengan menit di bawah 30 nilainya ditandai sebagai sampel kecil, bukan dinaikkan',
+                'urut menurun, tandai tertinggi dan terendah'],
+        output: 'daftar nama + nilai + kontribusi utama'
+      },
+      {
+        id: 'PS-04', name: 'Saved Moments (pasca)', slot: 'kolom utama',
+        what: 'Gabungan momen yang ditandai analis saat laga berjalan dan temuan yang sistem hitung dari data akhir. Ini bahan mentah untuk konten, dan tiap baris bisa dicentang untuk masuk ke prompt.',
+        variants: ['asal live (ditandai analis)', 'asal sistem (dihitung dari data akhir)', 'terpilih untuk prompt', 'tidak terpilih'],
+        input: 'saved_moments match ini · hasil detektor pada data akhir laga',
+        steps: ['ambil semua momen tersimpan dengan match_id ini',
+                'jalankan detektor sekali lagi pada data lengkap, temuan baru ditandai asal sistem',
+                'buang duplikat kalau temuan sistem sama dengan momen yang sudah ditandai analis',
+                'centang menentukan mana yang masuk ke PS-05'],
+        output: 'daftar momen bermenit + asal + kotak centang'
+      },
+      {
+        id: 'PS-05', name: 'Generator Prompt', slot: 'kolom utama, paling bawah',
+        what: 'Menyusun satu prompt siap tempel untuk alat AI mana pun, berisi angka dan kalimat dari data kita sendiri. Ada karena tim socmed butuh gambar dan caption, sementara app ini hanya perlu memastikan isinya benar.',
+        variants: ['single post', 'carousel', 'video atau reels', 'thread di X', 'story'],
+        input: 'momen tercentang di PS-04 · PS-02 · PS-03 · skor dan identitas laga',
+        steps: ['susun blok konteks: lawan, kompetisi, tanggal, skor, xG',
+                'masukkan fakta tercentang apa adanya, angka tidak ditulis ulang supaya tidak berubah',
+                'tambahkan instruksi format sesuai tipe konten: jumlah slide, panjang naskah, atau jumlah tweet',
+                'tambahkan nada bicara dan bahasa',
+                'keluarkan sebagai satu blok teks yang bisa dicopy sekali klik'],
+        output: 'prompt penuh + jumlah baris + tombol salin'
+      }
+    ]
+  },
+  {
+    title: 'Bursa Transfer',
+    sub: 'kebutuhan skuad, rumor, dan evaluasi',
+    cards: [
+      {
+        id: 'BR-01', name: 'Indeks Kebutuhan Skuad', slot: 'kolom kiri',
+        what: 'Skor kemendesakan per posisi, dari yang paling butuh sampai yang aman. Ini jawaban atas pertanyaan paling sering di komunitas: United sebenarnya butuh apa. Klik satu posisi untuk melihat spesifikasi pemain yang dicari.',
+        variants: ['mendesak di atas 70 (merah)', 'perlu diperkuat 40-70 (kuning)', 'aman di bawah 40 (hijau)', 'posisi terpilih'],
+        input: 'A: menit per posisi musim ini · data usia dan sisa kontrak · C: output per 90 per pemain · tolok ukur posisi di liga',
+        steps: ['kedalaman = jumlah pemain layak di posisi itu dibanding kebutuhan minimal dua orang',
+                'risiko usia dan kontrak = jumlah pemain di atas 30 tahun atau kontrak habis kurang dari 18 bulan',
+                'selisih output = seberapa jauh pemain terbaik posisi itu di bawah persentil 60 liga',
+                'beban = total menit posisi dibagi jumlah pemain yang menanggungnya',
+                'skor = 0,30 x kekurangan kedalaman + 0,25 x risiko usia dan kontrak + 0,25 x selisih output + 0,20 x beban, dinormalkan ke 0-100',
+                'urut menurun supaya posisi paling mendesak selalu di atas'],
+        output: 'tujuh posisi berskor + bar + catatan alasan singkat'
+      },
+      {
+        id: 'BR-02', name: 'Neraca Bursa', slot: 'kolom kiri',
+        what: 'Ringkasan aktivitas bursa: siapa masuk, keluar, dipinjamkan, berapa belanja bersih, dan yang paling penting, kebutuhan mana yang sudah tertutup dan mana yang belum.',
+        variants: ['kebutuhan terpenuhi (centang)', 'sebagian (tilde)', 'belum (silang)'],
+        input: 'catatan transfer masuk, keluar, pinjaman dengan nilai · indeks BR-01 sebelum dan sesudah bursa',
+        steps: ['jumlahkan nilai transfer masuk dan keluar, belanja bersih = masuk − keluar',
+                'hitung ulang indeks kebutuhan dengan skuad setelah bursa',
+                'bandingkan dengan indeks sebelum bursa: turun di bawah 40 = terpenuhi, turun tapi masih di atas 40 = sebagian, tidak berubah = belum'],
+        output: 'jumlah dan nilai per kategori, belanja bersih, status per posisi'
+      },
+      {
+        id: 'BR-03', name: 'Papan Rumor', slot: 'kolom utama',
+        what: 'Rumor transfer disusun dalam lima tahap kepastian, dan tahapnya ditentukan kesepakatan antar sumber tepercaya, bukan oleh ramainya perbincangan. Tiap nama membawa skor kecocokan dengan kebutuhan posisi kita.',
+        variants: ['tahap rumor', 'tahap minat', 'tahap negosiasi', 'tahap kesepakatan', 'tahap resmi'],
+        input: 'berita per rumor dengan tanggal dan sumber · tabel rekam jejak sumber · profil pemain · spesifikasi BR-04',
+        steps: ['kelompokkan berita per pemain, tiap berita ditandai tahap yang diklaim',
+                'tahap yang dipakai = tahap tertinggi yang dilaporkan minimal dua sumber bertingkat B atau lebih tinggi',
+                'satu sumber saja, sekuat apa pun, hanya menaikkan sampai tahap minat',
+                'kecocokan = seberapa dekat metrik pemain dengan metrik wajib di spesifikasi posisinya, dinyatakan 0-100',
+                'rumor tanpa berita baru lebih dari 21 hari diturunkan kembali satu tahap'],
+        output: 'lima kolom tahap berisi kartu pemain + skor kecocokan'
+      },
+      {
+        id: 'BR-04', name: 'Spesifikasi Profil', slot: 'kolom utama',
+        what: 'Terjemahan satu angka kebutuhan menjadi kriteria pemain yang konkret: peran yang dicari, metrik yang wajib dipenuhi, rentang usia dan harga, serta pembanding yang sudah dikenal. Isinya berganti mengikuti posisi yang diklik di indeks kebutuhan.',
+        variants: ['satu set per posisi', 'tombol buat prompt konten'],
+        input: 'indeks BR-01 posisi terpilih · gaya main United musim ini · perkiraan anggaran · sebaran metrik pemain liga',
+        steps: ['ambil metrik posisi di mana skuad berada di bawah persentil 40 liga, itu yang jadi metrik wajib',
+                'peran ditentukan dari gaya main tim, bukan dari nama posisi saja',
+                'rentang usia dari struktur usia posisi itu: kalau sudah ada pemain di atas 30, cari 21-25',
+                'rentang harga dari anggaran tersisa dibanding jumlah posisi mendesak',
+                'pembanding = pemain yang sudah dikenal audiens dan metriknya mendekati profil ini'],
+        output: 'empat kartu spesifikasi + tombol buat prompt konten'
+      }
+    ]
+  },
+  {
+    title: 'Skuad',
+    sub: 'ketersediaan pemain dan rekonsiliasi sumber',
+    cards: [
+      {
+        id: 'SQ-01', name: 'Konflik Sumber', slot: 'paling atas',
+        what: 'Kalau dua sumber menulis status berbeda untuk pemain yang sama, app tidak menebak. Konfliknya ditampilkan lengkap dengan umur tiap data, dan analis yang memutuskan mana yang dipakai. Ditaruh paling atas karena satu status salah bisa merusak seluruh prediksi susunan.',
+        variants: ['belum diputuskan', 'dipilih sumber A', 'dipilih sumber D', 'ditimpa susunan resmi'],
+        input: 'status pemain dari semua feed cedera dengan waktu terbit',
+        steps: ['bandingkan status pemain yang sama antar sumber, beda status = konflik',
+                'selama belum diputuskan, status pemain itu di tabel bawah ditulis Bentrok dan diberi tanda jangan dipakai untuk konten',
+                'pilihan analis menimpa keduanya dan dicatat sebagai pilihan manual, bukan data sumber',
+                'susunan resmi yang terbit satu jam sebelum kick-off menimpa semuanya secara otomatis'],
+        output: 'kartu per konflik: dua pilihan status, umur data, catatan, tombol batalkan pilihan'
+      },
+      {
+        id: 'SQ-02', name: 'Ketersediaan', slot: 'tabel utama',
+        what: 'Satu tabel status semua pemain: fit, ragu, cedera, dipinjamkan, atau bentrok. Termasuk perkiraan kembali dan beban menit 14 hari, jadi bisa langsung dipakai untuk memprediksi susunan.',
+        variants: ['fit (hijau)', 'ragu (kuning)', 'cedera (merah)', 'bentrok (ungu)', 'pinjaman keluar', 'pinjaman masuk'],
+        input: 'D dan sumber cedera lain: status per pemain · A: menit per laga · riwayat durasi cedera serupa',
+        steps: ['gabungkan semua sumber, urutan prioritas: pengumuman resmi klub, lalu sumber tingkat A, lalu agregator',
+                'kalau prioritas sama tapi status beda, jadikan konflik dan serahkan ke SQ-01',
+                'perkiraan kembali = median durasi pemulihan cedera sejenis pada pemain seusia, bukan tanggal dari berita',
+                'menit 14 hari dijumlahkan dari event, bukan dari laporan',
+                'kolom beban diwarnai memakai ambang yang sama dengan LV-08'],
+        output: 'tabel: nama, posisi, status, catatan, perkiraan kembali, menit 14 hari'
+      }
+    ]
+  },
+  {
+    title: 'Statistik',
+    sub: 'basis data angka pemain',
+    cards: [
+      {
+        id: 'ST-01', name: 'Statistik Pemain', slot: 'tabel utama',
+        what: 'Tabel angka pemain yang bisa disaring per musim dan per kompetisi, dan diurutkan dari kolom mana saja. Ada karena pertanyaan saat siaran hampir selalu spesifik: gol di Liga Premier saja, atau perbandingan dengan musim lalu.',
+        variants: ['musim ini / musim lalu', 'semua kompetisi / Liga Premier / Eropa / piala domestik', 'urut naik / turun per kolom'],
+        input: 'C: statistik per pemain per laga, dengan penanda kompetisi dan musim',
+        steps: ['saring baris sesuai musim dan kompetisi yang dipilih',
+                'agregasi total untuk menit, gol, asis, xG, xA',
+                'agregasi per 90 menit untuk umpan progresif, intersep, persentase umpan sukses, persentase penyelamatan: nilai dibagi menit lalu dikali 90',
+                'pemain dengan menit di bawah 90 pada saringan aktif diberi tanda sampel kecil',
+                'urutan default menit menurun, klik kolom membalik arah urut'],
+        output: 'tabel 11 kolom + ringkasan saringan yang aktif'
+      }
+    ]
+  },
+  {
+    title: 'Berita',
+    sub: 'informasi masuk dan mutu sumbernya',
+    cards: [
+      {
+        id: 'NW-01', name: 'Umpan Berita', slot: 'kolom utama',
+        what: 'Berita dan rumor yang dinilai dari rekam jejak sumbernya, bukan dari judulnya. Tingkat A sampai C ditampilkan besar di kiri supaya keputusan percaya atau tidak bisa diambil dalam satu detik.',
+        variants: ['tingkat A (terbukti akurat)', 'tingkat B (campur)', 'tingkat C (sering salah)'],
+        input: 'umpan RSS dan pengambilan halaman · tabel rekam jejak akurasi sumber',
+        steps: ['ambil berita baru, buang duplikat berdasarkan kemiripan judul di atas 80 persen',
+                'tingkat sumber = klaim yang akhirnya terbukti dibagi total klaim yang bisa diverifikasi, dihitung ulang tiap bursa',
+                'di atas 75 persen tingkat A, 45-75 persen tingkat B, di bawahnya tingkat C',
+                'urut waktu terbit menurun, tingkat C tetap ditampilkan tapi tidak boleh menaikkan tahap rumor'],
+        output: 'daftar berita: tingkat, judul, ringkasan, sumber dan waktu'
+      },
+      {
+        id: 'NW-02', name: 'Sentimen Fans', slot: 'kolom kanan',
+        what: 'Bacaan suasana pendukung dari polling story dan kolom komentar. Diisi manual dan ditandai sebagai perkiraan, karena tidak ada cara jujur menghitung ini otomatis dari data gratis.',
+        variants: ['diisi manual', 'belum diperbarui'],
+        input: 'entri manual analis: label, nilai 0-100, tanggal pengisian',
+        steps: ['analis mengisi beberapa ukuran suasana setelah membaca polling dan komentar',
+                'entri lebih dari 7 hari ditandai sudah lewat waktu',
+                'tidak ada perhitungan otomatis, dan itu disebut jelas di kartu'],
+        output: 'beberapa bar berlabel + catatan bahwa ini perkiraan'
+      },
+      {
+        id: 'NW-03', name: 'Kesehatan Sumber', slot: 'kolom kanan',
+        what: 'Versi lengkap dari kartu kesiapan data: keempat sumber, umur data terakhir, dan arti tiap warna. Ditaruh di halaman Berita karena di sinilah pertanyaan soal bisa tidaknya data dipercaya paling sering muncul.',
+        variants: ['ok (hijau)', 'ada jeda (kuning)', 'berhenti kirim data (merah)'],
+        input: 'log heartbeat semua sumber',
+        steps: ['rumus lag dan ambang sama dengan LI-04',
+                'sumber yang berhenti membuat semua angka turunannya diberi tanda jangan dipakai untuk konten sebelum dicek manual'],
+        output: 'empat baris sumber + umur data + keterangan arti warna'
+      }
+    ]
+  },
+  {
+    title: 'Modal',
+    sub: 'muncul saat sesuatu diklik',
+    cards: [
+      {
+        id: 'MD-01', name: 'Detail Bukti Klaim', slot: 'dibuka dari Game Highlights',
+        what: 'Menunjukkan isi dari rasio bukti 3/3 atau 2/3: syarat apa saja yang diperiksa model, nilai aktual dibanding ambangnya, dan dari sumber mana. Ditutup dengan kalimat siap ucap plus peringatan cara menyampaikannya.',
+        variants: ['semua syarat terpenuhi', 'ada syarat belum terpenuhi'],
+        input: 'daftar syarat klaim + nilai aktual + ambang + kode sumber',
+        steps: ['tampilkan tiap syarat dengan nilai aktual, ambangnya, dan sumbernya',
+                'syarat terpenuhi hijau, belum terpenuhi kuning, tidak ada yang disembunyikan',
+                'peringatan mengikuti rasio: penuh berarti boleh disebut fakta, kurang satu berarti harus disampaikan sebagai dugaan'],
+        output: 'rasio bukti, daftar syarat, kalimat siap ucap, tombol Save dan Salin'
+      },
+      {
+        id: 'MD-02', name: 'Detail Pemain', slot: 'dibuka dari node lapangan atau daftar skuad',
+        what: 'Rincian permainan satu pemain sepanjang laga. Metrik yang ditampilkan berbeda per posisi: kiper dinilai dari penyelamatan, bek dari aksi bertahan, gelandang dan sayap dari xT dan keterlibatan.',
+        variants: ['kiper', 'bek tengah', 'bek sayap', 'gelandang', 'sayap dan penyerang'],
+        input: 'B: semua event pemain ini · A: menit bermain · C: xT per aksi',
+        steps: ['pilih set metrik sesuai posisi pemain, jadi kiper tidak diukur dengan patokan penyerang',
+                'grafik dipecah per 15 menit untuk melihat kapan performanya berubah',
+                'nilai memakai rumus LV-06',
+                'beban 14 hari memakai rumus LV-08'],
+        output: 'nomor, nama, posisi, menit, nilai, metrik per posisi, grafik per 15 menit'
+      },
+      {
+        id: 'MD-03', name: 'Prompt Konten', slot: 'dibuka dari Pasca dan Bursa',
+        what: 'Jendela penyusun prompt: pilih tipe konten dan nada, lalu terima satu blok teks siap tempel ke alat AI mana pun. Data dan angkanya datang dari app, gambar dan penyusunan katanya dikerjakan di luar.',
+        variants: ['single post', 'carousel', 'video atau reels', 'thread di X', 'story', 'nada santai / analitis / tajam'],
+        input: 'fakta terpilih dari kartu asal · identitas laga atau posisi · pilihan tipe dan nada',
+        steps: ['blok konteks disusun otomatis dari kartu asal, jadi prompt selalu menyebut laga atau posisi mana',
+                'fakta dimasukkan apa adanya, angka tidak ditulis ulang',
+                'instruksi format ditentukan tipe konten: jumlah slide untuk carousel, panjang naskah untuk video, jumlah tweet untuk thread',
+                'nada dan bahasa ditambahkan di akhir'],
+        output: 'blok prompt penuh + tombol salin'
+      }
+    ]
+  }
+];
+
+class Component extends DCLogic {
+  renderVals() {
+    const groups = G.map(g => ({
+      title: g.title, sub: g.sub, count: g.cards.length + ' card',
+      cards: g.cards.map(c => ({
+        id: c.id, name: c.name, slot: c.slot, what: c.what,
+        variants: c.variants, input: c.input, output: c.output,
+        steps: c.steps.map((t, i) => ({ n: (i + 1) + '.', t: t })),
+        hasNote: !!c.note, note: c.note || ''
+      }))
+    }));
+    return {
+      groups: groups,
+      total: G.reduce((a, g) => a + g.cards.length, 0),
+      legend: [
+        { k: 'Sumber A', v: 'jadwal, susunan pemain, skor, menit bermain' },
+        { k: 'Sumber B', v: 'event laga dengan koordinat: tembakan, umpan, duel, aksi bertahan' },
+        { k: 'Sumber C', v: 'statistik musim dan model turunan xG, xA, xT' },
+        { k: 'Sumber D', v: 'feed cedera dan skorsing' },
+        { k: 'Manual', v: 'diisi analis: tag saat laga, sentimen fans, keputusan konflik sumber' },
+        { k: 'xT', v: 'expected threat, nilai ancaman yang ditambahkan satu aksi terhadap peluang mencetak gol' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

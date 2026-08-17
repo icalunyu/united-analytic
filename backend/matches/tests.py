@@ -1,5 +1,6 @@
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
+from matches.management.commands.pull_squad_sdb import Command as PullSquadSdbCommand
 from matches.management.commands.pull_squad import (
     MIN_SQUAD_FOR_DEACTIVATION,
     Command as PullSquadCommand,
@@ -74,3 +75,35 @@ class SyncActiveFlagsTests(TestCase):
 
         pemain_lain.refresh_from_db()
         self.assertTrue(pemain_lain.is_active)
+
+
+class ParseHeightTests(SimpleTestCase):
+    """Parser tinggi badan TheSportsDB.
+
+    Versi lama nyatuin semua digit di string, jadi '179 cm (5 ft 10 in)'
+    jadi 179510. SQLite nerima (nggak negakin batas kolom), Postgres nolak —
+    ketauannya baru pas migrasi database.
+    """
+
+    def setUp(self):
+        self.parse = PullSquadSdbCommand._parse_height_cm
+
+    def test_format_meter(self):
+        self.assertEqual(self.parse('1.83 m'), 183)
+        self.assertEqual(self.parse('1,79 m'), 179)
+
+    def test_format_sentimeter(self):
+        self.assertEqual(self.parse('183 cm'), 183)
+
+    def test_dua_satuan_sekaligus(self):
+        """Regresi: ini yang dulu bikin 179510."""
+        self.assertEqual(self.parse('179 cm (5 ft 10 in)'), 179)
+        self.assertEqual(self.parse('1.79 m (5 ft 10 in)'), 179)
+
+    def test_nilai_di_luar_nalar_ditolak(self):
+        self.assertIsNone(self.parse('179510'))
+        self.assertIsNone(self.parse('12 cm'))
+
+    def test_input_kosong_atau_tanpa_angka(self):
+        for value in ('', None, 'unknown'):
+            self.assertIsNone(self.parse(value))

@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
@@ -135,12 +137,27 @@ class Command(BaseCommand):
 
     @staticmethod
     def _parse_height_cm(value):
+        """Format contoh: "1.83 m", "183 cm", "179 cm (5 ft 10 in)".
+
+        Cuma angka PERTAMA yang dibaca. Versi sebelumnya nyatuin semua digit
+        di string, jadi "179 cm (5 ft 10 in)" berubah jadi 179510 — lolos di
+        SQLite (nggak negakin batas kolom) dan baru ketauan pas pindah ke
+        Postgres, yang nolak smallint di atas 32767.
+        """
         if not value:
             return None
-        # format contoh: "1.83 m" atau "183 cm"
-        digits = ''.join(ch for ch in value if ch.isdigit() or ch == '.')
+
+        match = re.search(r'\d+(?:[.,]\d+)?', value)
+        if not match:
+            return None
+
         try:
-            number = float(digits)
+            number = float(match.group(0).replace(',', '.'))
         except ValueError:
             return None
-        return round(number * 100) if number < 3 else round(number)
+
+        height = round(number * 100) if number < 3 else round(number)
+
+        # Jaring terakhir: di luar rentang ini pasti hasil parsing yang salah,
+        # bukan pemain yang kebetulan sangat pendek/tinggi.
+        return height if 140 <= height <= 230 else None

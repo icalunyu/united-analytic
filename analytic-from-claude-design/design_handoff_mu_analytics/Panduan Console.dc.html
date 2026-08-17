@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#0A0B0D;color:#E8E9EB}
+*{box-sizing:border-box}
+a{color:#D6263A;text-decoration:none}
+a:hover{color:#F2495C}
+::-webkit-scrollbar{width:8px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
+</style>
+</helmet>
+<div style="min-height:100vh;background:#0A0B0D;color:#E8E9EB;font-family:Barlow,system-ui,sans-serif;padding:0 0 90px">
+
+  <div style="max-width:1040px;margin:0 auto;padding:60px 32px 0">
+    <div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.2em;color:#D6263A;margin-bottom:18px">PANDUAN INTERNAL · DIVISI ANALISIS</div>
+    <h1 style="font:700 46px/1.05 'Barlow Condensed',sans-serif;letter-spacing:.01em;text-transform:uppercase;margin:0 0 18px;max-width:720px;text-wrap:pretty">Cara membaca MU Analytics Console</h1>
+    <p style="font:400 16px/1.6 Barlow,sans-serif;color:#9AA1AB;max-width:660px;margin:0;text-wrap:pretty">Tiap panel di console ini punya alasan kenapa ada dan kenapa ditaruh di posisinya. Dokumen ini menjelaskan satu per satu, dengan tampilan aslinya, supaya siapa pun di tim bisa langsung pakai tanpa perlu ditemani. Untuk rumus data di balik tiap panel, lihat dokumen Inventaris Card.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:36px">
+      <div style="padding:15px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:600 10px/1 'Barlow Condensed',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#7E858F;margin-bottom:9px">Prinsip 1</div>
+        <div style="font:400 13.5px/1.5 Barlow,sans-serif;color:#C7CCD3">Kiri untuk yang dibaca, tengah untuk yang dilihat, kanan untuk yang dipantau. Susunan kolom di tiap halaman mengikuti aturan ini.</div>
+      </div>
+      <div style="padding:15px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:600 10px/1 'Barlow Condensed',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#7E858F;margin-bottom:9px">Prinsip 2</div>
+        <div style="font:400 13.5px/1.5 Barlow,sans-serif;color:#C7CCD3">Setiap angka membawa sumbernya. Kalau tidak jelas datanya dari mana, jangan dipakai untuk konten.</div>
+      </div>
+      <div style="padding:15px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:600 10px/1 'Barlow Condensed',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#7E858F;margin-bottom:9px">Prinsip 3</div>
+        <div style="font:400 13.5px/1.5 Barlow,sans-serif;color:#C7CCD3">Console ini tidak menyimpulkan buat kamu. Dia menyiapkan bukti dan menyebut kekuatannya, kesimpulan tetap dari analis.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="padding:22px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+      <div style="font:700 15px/1 'Barlow Condensed',sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-bottom:16px">Alur pakai dalam satu pekan</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0">
+        <div style="padding-right:16px;border-right:1px solid rgba(255,255,255,.07)">
+          <div style="font:700 20px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">H-2</div>
+          <div style="font:600 13px/1.2 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px">Halaman Pra</div>
+          <div style="font:400 12.5px/1.5 Barlow,sans-serif;color:#8E959E">Baca draf prediksi susunan dan hipotesis taktik yang sudah disusun sistem, lalu koreksi. Jadi bahan konten preview.</div>
+        </div>
+        <div style="padding:0 16px;border-right:1px solid rgba(255,255,255,.07)">
+          <div style="font:700 20px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">HARI-H</div>
+          <div style="font:600 13px/1.2 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px">Halaman Live</div>
+          <div style="font:400 12.5px/1.5 Barlow,sans-serif;color:#8E959E">Buka sambil nobar atau siaran TikTok. Baca Bahan Pundit, simpan yang menarik lewat tombol Save.</div>
+        </div>
+        <div style="padding:0 16px;border-right:1px solid rgba(255,255,255,.07)">
+          <div style="font:700 20px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">H+1</div>
+          <div style="font:600 13px/1.2 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px">Halaman Pasca</div>
+          <div style="font:400 12.5px/1.5 Barlow,sans-serif;color:#8E959E">Saved moments laga itu berubah jadi laporan dan prompt konten. Serahkan ke tim socmed.</div>
+        </div>
+        <div style="padding-left:16px">
+          <div style="font:700 20px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">BURSA</div>
+          <div style="font:600 13px/1.2 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px">Halaman Bursa</div>
+          <div style="font:400 12.5px/1.5 Barlow,sans-serif;color:#8E959E">Pantau rumor dengan patokan kebutuhan skuad, bukan ikut ramai linimasa.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:44px 32px 0">
+    <div style="display:flex;align-items:baseline;gap:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:26px">
+      <div style="font:700 28px/1 'JetBrains Mono',monospace;color:#D6263A">00</div>
+      <div style="font:700 26px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">Rangka umum</div>
+      <div style="font:400 13px/1.3 Barlow,sans-serif;color:#7E858F;margin-left:auto">Ada di semua halaman</div>
+    </div>
+
+    <div style="padding:18px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+      <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px">Rel navigasi kiri &amp; bar atas</div>
+      <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Rel kiri berisi tujuh halaman: Live, Pra, Pasca, Bursa, Skuad, Statistik, Berita. Bar atas berisi nama halaman yang sedang dibuka dan satu indikator: titik merah berdenyut <span style="color:#fff">Live</span> kalau ada pertandingan berjalan, titik abu <span style="color:#fff">Idle</span> kalau tidak.</div>
+      <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Urutan halaman mengikuti siklus pertandingan, bukan abjad: siapkan di Pra, pandu di Live, olah di Pasca. Indikator Live memberi tahu apakah angka di halaman Live sedang bergerak atau tidak.</div>
+      <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Navigasi ditempel di kiri dan dibuat sempit karena cuma dipakai sesekali, ruang layar diberikan ke isinya. Status kesehatan tiap sumber data tidak ditaruh di bar atas, tapi di kartu Kesiapan Data dan Kesehatan Sumber, supaya penjelasannya ikut terbaca.</div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="display:flex;align-items:baseline;gap:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:26px">
+      <div style="font:700 28px/1 'JetBrains Mono',monospace;color:#D6263A">01</div>
+      <div style="font:700 26px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">Live · saat tidak ada laga</div>
+      <div style="font:400 13px/1.3 Barlow,sans-serif;color:#7E858F;margin-left:auto">Tampilan di hari biasa</div>
+    </div>
+
+    <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+      <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Halaman Live tanpa pertandingan</div>
+      <img src="shots/idle.png" alt="Halaman Live saat tidak ada pertandingan" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+      <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Halaman Live tidak dibiarkan kosong di luar hari pertandingan. Isinya berganti jadi empat hal: hitung mundur ke kick-off berikutnya, <span style="color:#fff">Persiapan Divisi</span>, <span style="color:#fff">Jadwal Berikutnya</span>, dan di kanan <span style="color:#fff">Kesiapan Data</span> serta <span style="color:#fff">Hasil Terakhir</span>.</div>
+      <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Cara baca Persiapan Divisi.</span> Badge <span style="color:#3BD08C">SISTEM</span> berarti pekerjaan itu dijalankan otomatis dan kamu hanya perlu membacanya. Badge <span style="color:#E4B84A">MANUAL</span> berarti harus ada orangnya, dan app tidak bisa memastikan itu sudah dikerjakan. Tiap baris punya tombol yang melompat langsung ke halaman tempat pekerjaan itu diselesaikan.</div>
+      <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Menjawab dua pertanyaan hari biasa: kapan kerja berikutnya, dan apa yang belum beres. Kesiapan Data ada di sini supaya sumber yang mati ketahuan sehari sebelumnya, bukan saat siaran sudah jalan.</div>
+      <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Hitung mundur diletakkan paling atas dan paling besar karena itu satu-satunya angka yang dicari orang saat membuka app di hari kosong. Persiapan Divisi tepat di bawahnya, karena pertanyaan berikutnya selalu apa yang harus dikerjakan sebelum tanggal itu.</div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="display:flex;align-items:baseline;gap:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:26px">
+      <div style="font:700 28px/1 'JetBrains Mono',monospace;color:#D6263A">02</div>
+      <div style="font:700 26px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">Live · laga berjalan</div>
+      <div style="font:400 13px/1.3 Barlow,sans-serif;color:#7E858F;margin-left:auto">Halaman yang dibuka sambil nonton</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:22px">
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Strip pertandingan · paling atas</div>
+        <img src="shots/strip.png" alt="Strip pertandingan" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Identitas laga, skor, xG kedua tim, menit berjalan, dan bar momentum lima belas menit terakhir.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Menjawab pertanyaan yang paling sering muncul di kolom komentar: skornya imbang, tapi sebenarnya siapa yang lebih pantas menang. Selisih xG dan arah momentum menjawab itu dalam satu lirikan.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Melebar penuh di paling atas karena ini konteks untuk semua panel di bawahnya. Angka apa pun yang kamu sebut nanti selalu relatif terhadap skor dan menit.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Tampilan jeda</div>
+        <img src="shots/jeda.png" alt="Tampilan saat jeda babak" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Saat jeda babak atau jeda sebelum extra time, strip berganti jadi panel ringkasan: hitung mundur ke babak berikutnya, lima angka penentu babak yang baru selesai, <span style="color:#fff">yang layak dibahas</span>, dan <span style="color:#fff">yang perlu berubah</span>.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Jeda adalah waktu bicara paling panjang dalam siaran, dan satu-satunya waktu yang cukup untuk posting. Panel ini menyiapkan bahan untuk keduanya, dan isinya menyesuaikan fase: di jeda babak fokusnya babak pertama, di jeda extra time fokusnya beban menit dan kandidat rotasi.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Menggantikan strip di posisi yang sama, bukan muncul sebagai panel baru di bawah, supaya mata tidak perlu mencari. Saat jeda tidak ada event masuk, jadi ruang paling atas lebih berguna untuk merangkum daripada memantau.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Bahan Pundit · kolom kiri</div>
+        <div style="display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;align-items:start">
+          <img src="shots/pundit.png" alt="Panel Bahan Pundit" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px">
+          <div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Apa ini.</span> Inti dari seluruh console. Bukan tumpukan angka, tapi kalimat siap ucap: satu klaim sebagai judul, satu paragraf penjelasan, angka pendukung, dan kode sumber di pojok tiap kartu.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Gunanya.</span> Saat siaran kamu tidak punya waktu menafsirkan tabel. Panel ini sudah melakukan penafsirannya, kamu tinggal menyampaikan dengan gaya sendiri.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Cara baca.</span> Tag di tiap kartu menandai jenis temuannya: POLA, BEBAN, TEMPO, BOLA MATI, PRESSING. Chip di atas panel menyaring per tag. Tombol <span style="color:#fff">+ Save</span> menyimpan kartu itu ke Saved Moments, tombol <span style="color:#fff">Salin kalimat</span> menyalin kalimatnya ke papan klip untuk dipakai di caption.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Kolom paling kiri dan bisa digulir sendiri. Mata membaca dari kiri, jadi di sinilah tempat satu-satunya hal yang benar-benar kamu baca sepanjang pertandingan. Tombol simpan ada di tiap kartu supaya menyimpan bahan tidak memutus fokus nonton.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Lapangan &amp; empat lapisan · kolom tengah</div>
+        <img src="shots/pitch.png" alt="Panel lapangan" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Satu lapangan dengan empat cara membaca, tombolnya di kanan atas panel: posisi rata-rata, jaringan umpan, sentuhan, dan tekanan. Bulatan adalah pemain, tebal garis mengikuti volume umpan antar pasangan.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Bukti visual untuk klaim yang barusan kamu baca di kolom kiri. Kalau kamu bilang serangan cuma lewat kanan, lapisan sentuhan membuktikannya dalam dua detik dan enak dijadikan tangkapan layar untuk konten.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Bisa diklik.</span> Setiap bulatan pemain membuka detail permainannya. Nama di panel Skuad membuka dialog yang sama.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Di tengah dan paling besar, karena ini satu-satunya panel yang bentuknya harus dilihat, bukan dibaca. Empat lapisan ditumpuk di satu lapangan supaya perbandingannya terjadi di tempat yang sama.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Game Highlights</div>
+        <img src="shots/angle.png" alt="Panel Game Highlights" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Klaim besar tentang jalannya pertandingan, bukan kejadian tunggal. Tiap kartu menyebut berapa syarat buktinya yang sudah terpenuhi: <span style="color:#3BD08C">3/3 kuat</span> berarti boleh disampaikan sebagai fakta, <span style="color:#E4B84A">2/3 sebagian</span> berarti sampaikan sebagai dugaan.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Bahan Pundit memberi detail per momen, panel ini memberi narasi besarnya. Ini yang dipakai kalau kamu diminta menyimpulkan pertandingan dalam satu kalimat. Isinya berganti mengikuti fase laga: babak pertama, jeda, babak kedua, menjelang extra time.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Bisa diklik.</span> Klik kartu mana pun untuk melihat rincian buktinya.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Di bawah lapangan, di jalur baca yang sama, karena narasi besar biasanya baru dibutuhkan setelah melihat bukti visualnya.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Dialog bukti klaim</div>
+        <img src="shots/bukti.png" alt="Dialog bukti klaim" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div>
+          <div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Apa ini.</span> Isi dari rasio 3/3 atau 2/3. Tiap syarat yang diperiksa model ditampilkan lengkap: nilai sebenarnya, ambang yang dipakai, sumber datanya, dan apakah terpenuhi.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Gunanya.</span> Kalau ada yang bertanya dasarnya apa, jawabannya ada di sini dalam bentuk angka, bukan kesan. Di bawahnya ada kalimat siap ucap plus catatan cara menyampaikannya: fakta kalau semua syarat terpenuhi, dugaan kalau ada yang belum.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa dialog.</span> Rincian sebanyak ini akan menenggelamkan halaman kalau ditampilkan terus-menerus. Dibuka saat perlu, ditutup begitu selesai, dan posisi gulir halaman tidak berubah.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Dialog detail pemain</div>
+        <img src="shots/pemain.png" alt="Dialog detail pemain" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div>
+          <div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Apa ini.</span> Rincian permainan satu pemain sepanjang laga: menit, nilai, metrik utama, sebaran aksi di lapangan, grafik per 15 menit, dan satu kalimat kesimpulan yang bisa langsung diucapkan.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Cara baca.</span> Metriknya berbeda per posisi. Kiper dinilai dari penyelamatan dan aksi kiper, bek tengah dari aksi bertahan, bek sayap dan gelandang dari keterlibatan, penyerang dan sayap dari xT. Jadi jangan membandingkan angka antar posisi di dialog ini.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Cara buka.</span> Klik bulatan pemain di panel Lapangan, atau klik namanya di panel Skuad.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E;margin-bottom:0"><span style="color:#C7CCD3;font-weight:600">Kenapa dialog.</span> Pertanyaan tentang satu pemain datang tiba-tiba saat siaran dan harus dijawab dalam hitungan detik. Dialog membuka di atas halaman, jadi setelah ditutup kamu kembali ke tempat yang sama.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #D6263A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Saved Moments · kolom kanan</div>
+        <div style="display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;align-items:start">
+          <img src="shots/queue.png" alt="Panel Saved Moments" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px">
+          <div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Apa ini.</span> Penampung semua bahan yang kamu simpan lewat tombol Save, lengkap dengan menit kejadiannya. Di kolom yang sama ada <span style="color:#fff">Skuad</span> berisi kontribusi dan nilai sebelas pemain, dan <span style="color:#fff">Kandidat Rotasi</span> berisi siapa yang paling layak diganti.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Gunanya.</span> Mengumpulkan bahan konten sambil jalan. Semua yang tersimpan terikat ke laga ini dan otomatis muncul lagi di halaman Pasca laga yang sama, jadi tidak ada yang perlu dicatat manual.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Kolom kanan sempit karena isinya dilirik, bukan dibaca. Jumlah tersimpan sengaja terlihat sepanjang pertandingan supaya kamu tahu sudah punya berapa bahan sebelum peluit akhir, bukan baru sadar besok pagi.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="display:flex;align-items:baseline;gap:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:26px">
+      <div style="font:700 28px/1 'JetBrains Mono',monospace;color:#D6263A">03</div>
+      <div style="font:700 26px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">Pra</div>
+      <div style="font:400 13px/1.3 Barlow,sans-serif;color:#7E858F;margin-left:auto">Dikerjakan H-2 sampai H-1</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #4C7DF0">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Prediksi Susunan</div>
+        <img src="shots/xi.png" alt="Panel prediksi susunan" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Sebelas pemain yang paling mungkin diturunkan, dengan persentase keyakinan di tiap posisi. Draf ini disusun sistem dari susunan lima laga terakhir, beban menit, dan status cedera, lalu disusun ulang tiap ada kabar baru.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Konten preview paling laku adalah tebak-tebakan susunan pemain. Bedanya, punya kamu ada angkanya, jadi kalau meleset pun tetap terlihat serius. Yang tampil di panel ini adalah posisi kita sampai konten diunggah, bukan janji.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Bar identitas laga.</span> Di paling atas halaman selalu tertulis lawan, kompetisi, matchday, stadion, jam WIB, dan hitung mundur, supaya tidak pernah ada keraguan panel ini soal laga yang mana.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Paling atas dan paling besar karena ini keluaran utama halaman Pra dan yang paling sering ditangkap layar. Lapangan digambar dari sudut pandang tim yang menyerang ke kanan, sama seperti tayangan televisi.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #4C7DF0">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Hipotesis Taktik</div>
+        <img src="shots/hipotesis.png" alt="Panel hipotesis taktik" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Tiga dugaan tentang bagaimana pertandingan akan berjalan: satu peluang, satu cara menekan, satu tanda bahaya. Masing-masing membawa catatan seberapa sering pola itu muncul di delapan laga terakhir lawan dan berapa persen dugaan sejenis terbukti.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Ini yang membuat divisi analisis berbeda dari akun fanbase biasa. Kamu menulis dugaan sebelum pertandingan, lalu mengevaluasinya dengan jujur. Lama-lama akurasi kamu sendiri punya rekam jejak.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Tepat di bawah susunan, karena hipotesis taktik selalu berangkat dari siapa yang bermain.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #4C7DF0">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Head to Head &amp; Pemain Kunci</div>
+        <img src="shots/h2h.png" alt="Panel head to head" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:12px">
+        <img src="shots/kunci.png" alt="Panel pemain kunci" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Lima pertemuan terakhir dengan skor, tempat, dan xG. Di bawahnya tiga pemain paling menentukan dari masing-masing tim, dipilih dari output per 90 menit dan bukan dari nama besar.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Konteks sejarah tanpa harus mencari manual, dan daftar nama yang perlu diawasi saat siaran. Karena dipilih dari angka, panel ini sering memunculkan nama yang tidak diduga, dan itu justru bahan konten yang bagus.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Setelah susunan dan hipotesis, karena keduanya adalah pendukung, bukan pembuka. Di kolom kanan halaman ini ada Profil Lawan dan Duel Kunci sebagai pendamping yang dibaca sambil melihat susunan.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #4C7DF0">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Fakta Pendukung · kolom kanan</div>
+        <div style="display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;align-items:start">
+          <img src="shots/fakta.png" alt="Panel fakta pendukung" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px">
+          <div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Apa ini.</span> Kumpulan fakta pelengkap: rangkaian hasil yang masih hidup, rekor pertemuan, ambang yang hampir tercapai, dan angka ekstrem musim ini. Tiap fakta membawa kode sumbernya.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Gunanya.</span> Bahan pengisi jeda siaran dan pelengkap caption. Fakta seperti ini yang biasanya dicari mendadak dan tidak ketemu, jadi dikumpulkan lebih dulu.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Kolom kanan, di bawah Profil Lawan dan Duel Kunci, karena sifatnya dipindai saat butuh, bukan dibaca berurutan.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #4C7DF0">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Cek Prediksi · saat laga berjalan</div>
+        <img src="shots/cek.png" alt="Panel cek prediksi" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Begitu kick-off, halaman Pra berubah fungsi. Panel ini muncul di paling atas dan membandingkan hipotesis serta prediksi susunan dengan data laga yang sedang berjalan: mana yang kena, mana yang belum, dan berapa dari sebelas nama yang tepat.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Bahan komentar paling kuat saat siaran adalah menunjukkan bahwa kita sudah menduga sebelum kick-off. Panel ini juga yang membuat evaluasi jadi kebiasaan, bukan cuma dilakukan saat dugaan kita benar.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Halaman Pra tidak dibiarkan jadi arsip mati saat laga berjalan. Isinya tetap sama, cara memakainya yang berubah: dari menyiapkan menjadi menghitung.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="display:flex;align-items:baseline;gap:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:26px">
+      <div style="font:700 28px/1 'JetBrains Mono',monospace;color:#D6263A">04</div>
+      <div style="font:700 26px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">Pasca</div>
+      <div style="font:400 13px/1.3 Barlow,sans-serif;color:#7E858F;margin-left:auto">Untuk tim socmed, H+1</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #E4B84A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Pemilih laga · paling atas</div>
+        <img src="shots/pilih.png" alt="Pemilih laga" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Daftar laga yang sudah selesai, dengan skor dan tanggalnya. Halaman Pasca tidak terkunci ke laga terakhir.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Konten sering dibuat menyusul, dan perbandingan antar laga sering dibutuhkan. Semua panel di halaman ini mengikuti laga yang dipilih di sini, termasuk laporan, angka penentu, nilai pemain, saved moments, dan prompt.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Paling atas dan melebar penuh, karena konteks laga harus terbaca sebelum angka apa pun. Setiap panel di bawahnya juga menyebut ulang lawan dan skornya, supaya tangkapan layar tetap jelas saat dikirim ke grup.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #E4B84A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Laporan Pertandingan</div>
+        <img src="shots/laporan.png" alt="Panel laporan pertandingan" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Judul dan dua paragraf yang disusun dari seluruh event pertandingan, dengan angka penting sudah tertanam di kalimatnya.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Draf, bukan hasil akhir. Tugas kamu tinggal mengoreksi dan menambahkan sudut pandang, bukan mulai dari halaman kosong jam satu pagi. Di bawahnya ada empat Angka Penentu, Nilai Pemain, dan Saved Moments sebagai bahan pelengkap.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Paling atas kiri karena ini yang pertama dikerjakan setelah pertandingan. Urutan panel di bawahnya dari yang paling umum ke yang paling rinci, sama dengan cara orang membaca ulasan pertandingan.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #E4B84A">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Generator Prompt · kolom kanan</div>
+        <div style="display:grid;grid-template-columns:320px minmax(0,1fr);gap:24px;align-items:start">
+          <img src="shots/carousel.png" alt="Panel generator prompt" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px">
+          <div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Apa ini.</span> Penyusun prompt siap tempel untuk alat AI mana pun. Kamu pilih tipe konten dan nada, lalu app menyusun satu blok teks berisi konteks laga, fakta terpilih, dan instruksi format.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Gunanya.</span> Gambar dan penyusunan kata dikerjakan di luar, karena di sana hasilnya lebih bagus. Yang dijaga app ini adalah isinya: angka diambil apa adanya dari data kita, tidak ditulis ulang, jadi tidak ada risiko caption menyebut angka yang tidak pernah ada.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Cara pakai.</span> Centang fakta yang mau dipakai di Saved Moments, pilih tipe konten, salin prompt, tempel di alat AI pilihanmu.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Sejajar dengan laporan di sebelah kiri supaya kamu bisa menyalin kalimat tanpa berpindah halaman. Ini juga tempat saved moments dari halaman Live berakhir.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="display:flex;align-items:baseline;gap:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:26px">
+      <div style="font:700 28px/1 'JetBrains Mono',monospace;color:#D6263A">05</div>
+      <div style="font:700 26px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">Bursa</div>
+      <div style="font:400 13px/1.3 Barlow,sans-serif;color:#7E858F;margin-left:auto">Dipakai sepanjang jendela transfer</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #3BD08C">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Indeks Kebutuhan Skuad · kolom kiri</div>
+        <div style="display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;align-items:start">
+          <img src="shots/kebutuhan.png" alt="Panel indeks kebutuhan skuad" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px">
+          <div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Apa ini.</span> Skor 0 sampai 100 untuk tiap posisi, dihitung dari kedalaman skuad, kurva usia dan kontrak, output dibanding tolok ukur posisi, dan beban menit. Makin tinggi makin mendesak.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Gunanya.</span> Ini jawaban atas pertanyaan yang paling sering muncul di komunitas: MU butuh pemain seperti apa dan di lini mana. Skornya juga jadi rem saat linimasa ramai membicarakan posisi yang sebenarnya sudah aman.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Bisa diklik.</span> Klik posisi mana pun untuk mengganti isi panel Spesifikasi Profil di sebelah kanan. Ketujuh posisi punya spesifikasinya masing-masing, bukan hanya yang paling mendesak.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Kolom kiri dan dibaca lebih dulu daripada Papan Rumor, karena kebutuhan harus ditentukan sebelum melihat nama. Kalau urutannya terbalik, kamu cuma ikut arus rumor.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #3BD08C">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Papan Rumor</div>
+        <img src="shots/rumor.png" alt="Panel papan rumor" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Lima kolom tahapan, dari Rumor sampai Resmi, masing-masing dengan perkiraan peluang jadi. Tiap kartu menampilkan usia, nilai transfer, dan skor kecocokan dengan kebutuhan skuad.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Transfer yang masih rumor, yang sudah hampir jadi, dan yang sudah resmi, dipisah dengan jelas. Tahapan ditentukan oleh berapa banyak sumber kredibel yang sepakat, bukan oleh ramainya perbincangan. Skor kecocokan menahan tim dari ikut heboh atas nama yang sebenarnya tidak dibutuhkan.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Kolom tengah dan paling lebar. Susunannya bergerak dari kiri ke kanan mengikuti tingkat kepastian, jadi arah bacanya sudah menjelaskan maknanya tanpa keterangan tambahan.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #3BD08C">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Spesifikasi Profil &amp; prompt konten</div>
+        <img src="shots/spek.png" alt="Panel spesifikasi profil" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:12px">
+        <img src="shots/prompt.png" alt="Dialog prompt konten bursa" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div>
+          <div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Apa ini.</span> Terjemahan satu angka kebutuhan menjadi kriteria pemain yang konkret: peran yang dicari, metrik yang wajib dipenuhi, rentang usia dan harga, serta pembanding yang sudah dikenal audiens. Isinya mengikuti posisi yang diklik di indeks kebutuhan.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:10px"><span style="color:#fff;font-weight:600">Gunanya.</span> Patokan saat ada nama baru dikaitkan: cocok atau tidak dengan yang sebenarnya dibutuhkan. Tombol <span style="color:#fff">Buat prompt konten</span> membuka dialog yang menyusun prompt dari spesifikasi ini, dengan pilihan tipe konten yang sama seperti di halaman Pasca.</div>
+            <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Di bawah Papan Rumor, karena spesifikasi dipakai untuk menilai nama-nama di atasnya. Prompt dibuat sebagai dialog supaya tidak mendorong panel lain ke bawah saat dibuka.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="display:flex;align-items:baseline;gap:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:26px">
+      <div style="font:700 28px/1 'JetBrains Mono',monospace;color:#D6263A">06</div>
+      <div style="font:700 26px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">Skuad, Statistik, Berita</div>
+      <div style="font:400 13px/1.3 Barlow,sans-serif;color:#7E858F;margin-left:auto">Halaman rujukan</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #5B77A8">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Skuad · Konflik Sumber</div>
+        <img src="shots/konflik.png" alt="Panel konflik sumber" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Kalau dua sumber menulis status berbeda untuk pemain yang sama, app tidak menebak. Kedua versi ditampilkan berdampingan lengkap dengan umur datanya, dan kamu memilih mana yang dipakai.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Cara pakai.</span> Klik kotak sumber yang kamu percaya. Tabel di bawah langsung mengikuti dan ditandai sebagai pilihan manual, bukan data sumber. Selama belum dipilih, status pemain itu tertulis <span style="color:#fff">Bentrok</span> dan sebaiknya tidak dipakai untuk konten. Kalau tidak mau memutuskan, biarkan saja: susunan resmi terbit satu jam sebelum kick-off dan akan menimpa keduanya.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Paling atas halaman Skuad karena satu status yang salah merusak prediksi susunan, kandidat rotasi, dan konten yang dibangun di atasnya. Menampilkan konflik lebih jujur daripada memilih otomatis lalu diam-diam salah.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #5B77A8">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Skuad · Ketersediaan</div>
+        <img src="shots/skuad.png" alt="Tabel ketersediaan skuad" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Satu tabel berisi status tiap pemain: fit, ragu, cedera, dipinjamkan, atau pinjaman masuk. Ditambah perkiraan kembali dan beban menit empat belas hari terakhir.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Menjawab pertanyaan cedera dan status pinjaman di satu tempat. Kolom beban adalah alasan yang sering hilang dari perdebatan rotasi: pemain tidak diistirahatkan karena jelek, tapi karena sudah 450 menit dalam dua pekan.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Satu tabel penuh selebar halaman, tanpa panel pendamping, karena isinya memang untuk dipindai cepat, bukan dianalisis.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #5B77A8">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Statistik Pemain</div>
+        <img src="shots/statistik.png" alt="Tabel statistik pemain" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Basis data statistik pemain: menit, gol, asis, xG, xA, umpan progresif, akurasi umpan, intersep, dan persentase penyelamatan untuk kiper.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Cara pakai.</span> Baris tombol di atas tabel menyaring musim dan kompetisi, jadi pertanyaan seperti gol di Liga Premier saja atau perbandingan dengan musim lalu bisa dijawab tanpa hitung manual. Judul kolom bisa diklik untuk mengurutkan, dan klik kedua membalik arahnya. Menit, gol, asis, xG, dan xA adalah total; sisanya per 90 menit supaya pemain cadangan bisa dibandingkan adil dengan pemain inti.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Halaman terpisah dan sengaja dibuat kering. Tabel mentah tidak layak mengambil tempat di halaman Live, tapi harus selalu bisa dijangkau dua klik.</div>
+      </div>
+
+      <div style="padding:18px 20px 20px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px;border-left:2px solid #5B77A8">
+        <div style="font:700 19px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px">Berita · Umpan Berita</div>
+        <img src="shots/berita.png" alt="Panel umpan berita" style="width:100%;display:block;border:1px solid rgba(255,255,255,.09);border-radius:4px;margin-bottom:16px">
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Apa ini.</span> Berita dan rumor yang diberi tingkat A, B, atau C berdasarkan rekam jejak sumbernya, bukan berdasarkan judulnya. Di kolom kanan ada Sentimen Fans dan Kesehatan Sumber.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#B9C0C9;margin-bottom:8px"><span style="color:#fff;font-weight:600">Gunanya.</span> Tingkat A boleh langsung dijadikan konten, B perlu disebut sebagai kabar yang belum pasti, C sebaiknya tidak diangkat. Ini pagar yang menjaga nama baik komunitas. Sentimen Fans diisi manual dan ditandai sebagai perkiraan, karena tidak ada cara jujur menghitungnya otomatis dari data gratis.</div>
+        <div style="font:400 14px/1.6 Barlow,sans-serif;color:#8E959E"><span style="color:#C7CCD3;font-weight:600">Kenapa di situ.</span> Kesehatan Sumber ditaruh di halaman ini, bukan di halaman pengaturan, karena keandalan sumber adalah bagian dari cara menilai berita. Hijau berarti data masuk normal, kuning ada jeda tapi wajar, merah berarti feed berhenti mengirim data baru dan angkanya jangan dipakai sebelum dicek manual.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="display:flex;align-items:baseline;gap:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:26px">
+      <div style="font:700 28px/1 'JetBrains Mono',monospace;color:#D6263A">07</div>
+      <div style="font:700 26px/1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase">Kamus istilah</div>
+      <div style="font:400 13px/1.3 Barlow,sans-serif;color:#7E858F;margin-left:auto">Untuk anggota baru divisi</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">xG</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Peluang sebuah tembakan menjadi gol, dinilai dari posisi, sudut, dan jenis tembakan. xG 0,42 berarti peluang seperti itu jadi gol sekitar empat dari sepuluh kali.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">xA</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Versi asis dari xG. Menilai kualitas umpan yang menghasilkan tembakan, terlepas dari apakah temannya berhasil mencetak gol atau tidak.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">xT</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Expected threat. Seberapa besar sebuah umpan atau bawa bola menaikkan peluang tim mencetak gol, meski belum berujung tembakan. Berguna untuk menilai pemain yang kerjanya membangun, bukan menyelesaikan.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">PPDA</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Passes Per Defensive Action. Jumlah umpan yang dibiarkan lawan sebelum tim melakukan satu aksi bertahan. Dibaca terbalik dari kebanyakan angka: makin kecil makin agresif. PPDA 8,7 berarti lawan cuma sempat mengoper sembilan kali sebelum ditekan.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">Penetrasi sepertiga akhir</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Berapa kali bola berhasil dibawa masuk ke sepertiga lapangan lawan. Ukuran seberapa sering tim benar-benar sampai ke area berbahaya.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">Bola kedua</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Bola liar setelah duel udara atau sapuan. Sering menentukan babak, tapi jarang dihitung media, jadi ini salah satu sudut pandang yang bisa membedakan analisis kamu.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">Rest-defence</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Susunan pemain yang tetap di belakang saat timnya menyerang, sebagai jaring pengaman kalau bola hilang. Kalau tipis, tim itu rawan serangan balik.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">Umpan progresif</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Umpan yang memajukan bola cukup jauh ke arah gawang lawan. Membedakan pemain yang benar-benar membangun serangan dari yang sekadar mengoper ke samping.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">PSxG</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">xG setelah tembakan dilepas, dihitung dari arah bola ke gawang. Dipakai untuk menilai kiper: kalau kebobolan lebih sedikit dari PSxG, berarti dia bermain di atas standar.</div>
+      </div>
+      <div style="padding:15px 17px;background:#121317;border:1px solid rgba(255,255,255,.07);border-radius:6px">
+        <div style="font:700 13px/1 'JetBrains Mono',monospace;color:#D6263A;margin-bottom:9px">Beban 14 hari</div>
+        <div style="font:400 13.5px/1.55 Barlow,sans-serif;color:#B9C0C9">Total menit bermain dalam dua pekan terakhir. Merah berarti risiko cedera naik dan pemain itu kandidat kuat untuk dirotasi.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:52px 32px 0">
+    <div style="padding:24px;background:#121317;border:1px solid rgba(214,38,58,.3);border-radius:6px">
+      <div style="font:700 17px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px">Catatan sebelum dipakai tim</div>
+      <div style="font:400 14px/1.65 Barlow,sans-serif;color:#B9C0C9;max-width:720px;text-wrap:pretty">Semua angka di console saat ini masih data contoh, dipakai untuk menunjukkan bentuk akhirnya. Begitu sumber data asli tersambung, susunan panelnya tidak berubah, hanya isinya. Aturan yang perlu disepakati dulu di divisi: berita tingkat C tidak pernah diangkat, klaim dengan bukti 2/3 selalu disebut sebagai dugaan, dan setiap unggahan menyertakan sumber angkanya.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
