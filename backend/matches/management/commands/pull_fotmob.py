@@ -21,6 +21,7 @@ from django.utils import timezone
 from matches.dedup import resolve_match
 from matches.models import (
     Match,
+    MatchIngest,
     MatchMomentum,
     MatchShot,
     MatchTeamStatistics,
@@ -117,6 +118,11 @@ class Command(BaseCommand):
         parser.add_argument('--team-id', type=str, default=None)
         parser.add_argument('--match-id', type=str, default=None, help='Satu match FotMob saja')
         parser.add_argument('--limit', type=int, default=None, help='Batasi jumlah laga')
+        parser.add_argument(
+            '--refresh',
+            action='store_true',
+            help='Tarik ulang laga yang sudah pernah ditarik (default: dilewati).',
+        )
 
     def handle(self, *args, **options):
         client = FotMobClient()
@@ -140,8 +146,17 @@ class Command(BaseCommand):
 
         totals = {'match': 0, 'player': 0, 'team': 0, 'shot': 0, 'momentum': 0, 'slot': 0}
         skipped = 0
+        already = 0
 
         for fixture_id in fixture_ids:
+            # Penyaring HARUS sebelum request — yang mahal itu panggilan API,
+            # bukan pemrosesannya. Pemetaan id FotMob -> Match dibaca dari
+            # MatchExternalRef, jadi nggak perlu nembak jaringan buat tahu
+            # laga ini sudah pernah ditarik apa belum.
+            if not options['refresh'] and self._already_ingested(fixture_id):
+                already += 1
+                continue
+
             try:
                 detail = client.get_match(fixture_id)
             except FotMobError as exc:
@@ -161,8 +176,15 @@ class Command(BaseCommand):
             totals['shot'] += self._save_shots(match, content.get('shotmap'))
             totals['momentum'] += self._save_momentum(match, content.get('momentum'))
 
+            MatchIngest.objects.update_or_create(
+                match=match,
+                source=DataSource.FOTMOB,
+                defaults={'rows': totals['player'] + totals['shot'] + totals['momentum']},
+            )
             time.sleep(REQUEST_DELAY_SECONDS)
 
+        if already:
+            self.stdout.write(f'{already} laga dilewati (sudah pernah ditarik, pakai --refresh buat paksa).')
         if skipped:
             self.stdout.write(
                 self.style.WARNING(f'{skipped} laga nggak ketemu padanannya di database.')
@@ -176,6 +198,19 @@ class Command(BaseCommand):
         )
 
     # ---------------------------------------------------------------- resolve
+
+    @staticmethod
+    def _already_ingested(fixture_id):
+        """Cek tanpa nyentuh jaringan: id FotMob -> Match -> catatan ingest."""
+        try:
+            external_id = int(fixture_id)
+        except (TypeError, ValueError):
+            return False
+        return MatchIngest.objects.filter(
+            source=DataSource.FOTMOB,
+            match__external_refs__source=DataSource.FOTMOB,
+            match__external_refs__external_id=external_id,
+        ).exists()
 
     def _resolve_match(self, detail):
         general = detail.get('general') or {}

@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from matches.dedup import resolve_match
-from matches.models import Match, MatchShot, PlayerMatchStatistics
+from matches.models import Match, MatchIngest, MatchShot, PlayerMatchStatistics
 from matches.services import UnderstatClient, UnderstatError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
@@ -30,6 +30,11 @@ class Command(BaseCommand):
         parser.add_argument(
             '--limit', type=int, default=None, help='Batasi jumlah match (buat tes cepat)'
         )
+        parser.add_argument(
+            '--refresh',
+            action='store_true',
+            help='Tarik ulang match yang sudah pernah ditarik (default: dilewati).',
+        )
 
     def handle(self, *args, **options):
         client = UnderstatClient()
@@ -52,9 +57,15 @@ class Command(BaseCommand):
         shots_total = 0
         players_total = 0
         matched = 0
+        already = 0
         skipped = []
 
         for fixture in played:
+            # Sebelum request: match yang udah kelar datanya final.
+            if not options['refresh'] and self._already_ingested(fixture.get('id')):
+                already += 1
+                continue
+
             match = self._resolve_match(fixture)
             if match is None:
                 skipped.append(fixture)
@@ -67,10 +78,22 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f'  gagal narik match {fixture["id"]}: {exc}'))
                 continue
 
-            shots_total += self._save_shots(match, detail.get('shots') or {})
-            players_total += self._save_player_xg(match, detail.get('rosters') or {})
+            saved_shots = self._save_shots(match, detail.get('shots') or {})
+            saved_players = self._save_player_xg(match, detail.get('rosters') or {})
+            shots_total += saved_shots
+            players_total += saved_players
+
+            MatchIngest.objects.update_or_create(
+                match=match,
+                source=DataSource.UNDERSTAT,
+                defaults={'rows': saved_shots + saved_players},
+            )
             time.sleep(REQUEST_DELAY_SECONDS)
 
+        if already:
+            self.stdout.write(
+                f'{already} match dilewati (sudah pernah ditarik, pakai --refresh buat paksa).'
+            )
         if skipped:
             self.stdout.write(
                 self.style.WARNING(
@@ -85,6 +108,19 @@ class Command(BaseCommand):
                 f'{players_total} statistik pemain disimpan.'
             )
         )
+
+    @staticmethod
+    def _already_ingested(understat_id):
+        """Cek tanpa nyentuh jaringan, lewat MatchExternalRef."""
+        try:
+            external_id = int(understat_id)
+        except (TypeError, ValueError):
+            return False
+        return MatchIngest.objects.filter(
+            source=DataSource.UNDERSTAT,
+            match__external_refs__source=DataSource.UNDERSTAT,
+            match__external_refs__external_id=external_id,
+        ).exists()
 
     def _resolve_match(self, fixture):
         """Cocokin match Understat ke Match yang udah ada di DB.

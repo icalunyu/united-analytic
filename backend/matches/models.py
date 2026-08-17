@@ -396,6 +396,35 @@ class MatchShot(models.Model):
         return f'{self.match} - {self.player} {self.minute}\' (xG {self.xg:.2f})'
 
 
+class MatchIngest(models.Model):
+    """Catatan bahwa 1 laga udah ditarik dari 1 provider.
+
+    Kenapa perlu: laga yang udah kelar datanya final, tapi command penarikan
+    dulu narik ulang SEMUA laga selesai tiap kali jalan. Buat 46 laga itu
+    boros; buat 380 laga se-liga itu jadi ratusan panggilan per malam ke API
+    yang nggak resmi, tanpa dapat apa-apa.
+
+    Tabel ini juga fondasi kartu Kesehatan Sumber di desain — `ingested_at`
+    per sumber itu persis "kesegaran feed" yang mau ditampilin di sana.
+    """
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='ingests')
+    source = models.CharField(max_length=30, choices=DataSource.choices)
+    ingested_at = models.DateTimeField(auto_now=True)
+    # Jumlah baris yang tersimpan waktu itu — buat ngendus penarikan yang
+    # "berhasil" tapi sebenernya balik kosong.
+    rows = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['-ingested_at']
+        constraints = [
+            models.UniqueConstraint(fields=['match', 'source'], name='unique_match_source_ingest')
+        ]
+
+    def __str__(self):
+        return f'{self.match} <- {self.source} ({self.ingested_at:%Y-%m-%d %H:%M})'
+
+
 class MatchMomentum(models.Model):
     """Kurva momentum per menit dari provider.
 

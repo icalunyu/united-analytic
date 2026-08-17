@@ -6,7 +6,10 @@ from matches.management.commands.pull_squad import (
     MIN_SQUAD_FOR_DEACTIVATION,
     Command as PullSquadCommand,
 )
-from players.models import Player, Team
+from django.utils import timezone
+
+from matches.models import Match, MatchExternalRef, MatchIngest
+from players.models import DataSource, Player, Team
 
 
 class SyncActiveFlagsTests(TestCase):
@@ -144,3 +147,39 @@ class FotMobCoerceTests(SimpleTestCase):
 
     def test_bentuk_dict_dengan_total(self):
         self.assertEqual(self.coerce({'total': 42}, 'touches'), 42)
+
+
+class IncrementalIngestTests(TestCase):
+    """Penyaring 'sudah pernah ditarik'.
+
+    Laga yang selesai datanya final, tapi command dulu narik ulang semua tiap
+    jalan. Buat 46 laga itu boros; buat 380 laga se-liga jadi ratusan
+    panggilan per malam ke API yang nggak resmi tanpa dapat apa-apa.
+    """
+
+    def setUp(self):
+        home = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        away = Team.objects.create(name='Brighton')
+        self.match = Match.objects.create(
+            home_team=home, away_team=away, kickoff_at=timezone.now()
+        )
+        MatchExternalRef.objects.create(
+            match=self.match, source=DataSource.FOTMOB, external_id=4813745
+        )
+
+    def test_belum_ditarik_berarti_belum_pernah(self):
+        self.assertFalse(PullFotMobCommand._already_ingested(4813745))
+
+    def test_setelah_dicatat_dianggap_sudah(self):
+        MatchIngest.objects.create(match=self.match, source=DataSource.FOTMOB, rows=42)
+        self.assertTrue(PullFotMobCommand._already_ingested(4813745))
+
+    def test_catatan_dari_sumber_lain_nggak_ngaruh(self):
+        """Understat dan FotMob dilacak terpisah — satu ditarik nggak berarti
+        yang lain ikut."""
+        MatchIngest.objects.create(match=self.match, source=DataSource.UNDERSTAT, rows=10)
+        self.assertFalse(PullFotMobCommand._already_ingested(4813745))
+
+    def test_id_nggak_dikenal_atau_ngawur(self):
+        for value in (999999, None, 'bukan-angka'):
+            self.assertFalse(PullFotMobCommand._already_ingested(value))
