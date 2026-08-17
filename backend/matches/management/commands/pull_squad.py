@@ -15,6 +15,12 @@ POSITION_MAP = {
     'Offence': Player.Position.FORWARD,
 }
 
+# Ambang aman buat nandain pemain non-aktif. Kalau provider ngebalikin skuad
+# lebih kecil dari ini, hampir pasti responsnya kepotong (quota abis, error
+# separuh jalan) — dan nandain sisanya non-aktif bakal ngosongin skuad.
+# Lebih baik nggak ngapa-ngapain daripada salah.
+MIN_SQUAD_FOR_DEACTIVATION = 15
+
 
 class Command(BaseCommand):
     help = (
@@ -26,6 +32,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--team-id', type=int, default=None, help='Override FOOTBALL_DATA_MU_TEAM_ID dari settings'
+        )
+        parser.add_argument(
+            '--no-deactivate',
+            action='store_true',
+            help='Jangan tandai pemain di luar skuad sebagai non-aktif.',
         )
 
     def handle(self, *args, **options):
@@ -51,9 +62,11 @@ class Command(BaseCommand):
         squad = data.get('squad', [])
         created_count = 0
         updated_count = 0
+        squad_ids = set()
 
         for member in squad:
-            _, created = self._save_player(member, team)
+            player, created = self._save_player(member, team)
+            squad_ids.add(player.pk)
             if created:
                 created_count += 1
             else:
@@ -65,6 +78,51 @@ class Command(BaseCommand):
                 f'({created_count} baru, {updated_count} update).'
             )
         )
+
+        self._sync_active_flags(team, squad_ids, skip=options['no_deactivate'])
+
+    def _sync_active_flags(self, team, squad_ids, skip=False):
+        """Samain `is_active` sama skuad terkini dari provider.
+
+        Tanpa ini `is_active` nggak pernah disetel siapa pun — defaultnya True
+        dan nggak ada yang pernah ngubah — jadi tiap pemain yang pernah
+        kecatat di MU (termasuk yang udah pindah bertahun-tahun lalu, dari
+        data historis Premier League) selamanya ikut kehitung "Skuad Aktif".
+        """
+        if skip:
+            self.stdout.write('Penandaan non-aktif dilewati (--no-deactivate).')
+            return
+
+        if len(squad_ids) < MIN_SQUAD_FOR_DEACTIVATION:
+            self.stdout.write(
+                self.style.WARNING(
+                    f'Cuma {len(squad_ids)} pemain kebaca (minimal {MIN_SQUAD_FOR_DEACTIVATION}) — '
+                    f'penandaan non-aktif dilewati biar skuad nggak kekosongan gara-gara '
+                    f'respons yang kepotong.'
+                )
+            )
+            return
+
+        # Dua arah, biar bisa mengoreksi diri: yang balik ke skuad diaktifkan
+        # lagi, bukan cuma yang keluar dinonaktifkan.
+        reactivated = Player.objects.filter(team=team, pk__in=squad_ids, is_active=False).update(
+            is_active=True
+        )
+        deactivated = (
+            Player.objects.filter(team=team, is_active=True)
+            .exclude(pk__in=squad_ids)
+            .update(is_active=False)
+        )
+
+        if deactivated or reactivated:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f'Status skuad disamain: {deactivated} ditandai non-aktif, '
+                    f'{reactivated} diaktifkan lagi.'
+                )
+            )
+        else:
+            self.stdout.write('Status skuad udah sesuai.')
 
     def _save_player(self, member, team):
         full_name = member.get('name', '')
