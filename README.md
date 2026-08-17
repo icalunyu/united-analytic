@@ -67,6 +67,7 @@ Data ditarik dari 6 provider gratis yang saling melengkapi (kalau satu kena quot
 | `pull_match_events_espn` | ESPN (API internal, tidak resmi) | Event + statistik pertandingan, cover 8 kompetisi (`--slug` buat pilih 1, atau semua sekaligus) |
 | `pull_match_events_pl` | Premier League resmi (PulseLive/Opta) | Event pertandingan resmi, riwayat sejak 1992/93, cuma Premier League |
 | `pull_xg_understat` | Understat | xG tiap tembakan + xG/xA/xGChain/xGBuildup & menit main per pemain. Cuma Premier League |
+| `pull_fotmob` | FotMob | Statistik pemain terlengkap (aksi bertahan per pemain, touches, umpan ke sepertiga akhir), statistik tim dgn umpan per paruh, shotmap + xGOT, kurva momentum |
 
 Isi API key yang mau dipake di `backend/.env` (lihat `.env.example` buat daftar lengkap variable + link daftar tiap provider).
 
@@ -93,18 +94,28 @@ kedekatan ke gawang dari koordinat lapangan ESPN, lalu disebar ke beberapa menit
 sekitarnya biar kurvanya halus. Nilainya bertanda — positif tuan rumah, negatif
 tamu.
 
-Alasan dihitung sendiri, bukan narik dari Sofascore/FotMob: keduanya ngebatasi
-akses otomatis di ToS dan dijagain Cloudflare yang rutin nolak IP datacenter —
-artinya besar kemungkinan mati begitu di-deploy ke shared hosting. Model sendiri
-juga jalan di semua kompetisi, bukan cuma yang di-cover provider itu.
+Alasan dihitung sendiri walaupun FotMob nyediain momentum jadi: FotMob cuma
+ngasih momentum buat kompetisi resmi — laga persahabatan dapat `momentum: false`.
+Model sendiri jalan di semua laga selama play-by-play ESPN-nya ada. FotMob
+dipakai sebagai pembanding buat nyetel bobot, bukan sumber tampilan.
 
-Buat nyetel bobotnya ada `calibrate_momentum` — **alat lokal, jangan dijadwalin
-di cron**. Dia bandingin kurva kita sama attack momentum Sofascore dan ngitung
-korelasinya:
+(Sofascore sempat dicoba buat peran itu dan ditinggalkan: endpoint mereka nolak
+koneksi dari mana pun kita tes, lokal maupun server.)
+
+Buat nyetel bobotnya ada `calibrate_momentum`. Dia bandingin kurva kita sama
+momentum FotMob (yang disimpen `pull_fotmob`) dan ngitung korelasinya. Nggak
+nyentuh jaringan — semua dibaca dari database:
 
 ```bash
-python manage.py calibrate_momentum --match 241 --sofascore-event 12436870
+python manage.py calibrate_momentum --all
 ```
+
+Awalnya command ini nembak Sofascore, tapi endpoint mereka nolak koneksi dari
+mana pun kita coba (lokal maupun server), jadi nggak pernah bisa dites. FotMob
+ngasih data yang sama bentuknya dan bisa dijangkau.
+
+Patokan sekarang: korelasi rata-rata **+0.44**. Di bawah 0.6, jadi masih ada
+ruang setel di `PLAY_WEIGHTS` — bedanya sekarang hasil setelan itu keukur.
 
 ## Deploy ke cPanel (production)
 

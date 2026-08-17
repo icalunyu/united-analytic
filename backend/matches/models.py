@@ -133,6 +133,22 @@ class MatchTeamStatistics(models.Model):
     penalty_goals = models.PositiveSmallIntegerField(null=True, blank=True)
     penalty_shots = models.PositiveSmallIntegerField(null=True, blank=True)
 
+    # Dari FotMob. Pemisahan umpan paruh sendiri/paruh lawan yang bikin PPDA
+    # bisa dihitung — nggak ada provider gratis lain yang ngasih ini.
+    passes_own_half = models.PositiveSmallIntegerField(null=True, blank=True)
+    passes_opposition_half = models.PositiveSmallIntegerField(null=True, blank=True)
+    touches_opp_box = models.PositiveSmallIntegerField(null=True, blank=True)
+    big_chances = models.PositiveSmallIntegerField(null=True, blank=True)
+    big_chances_missed = models.PositiveSmallIntegerField(null=True, blank=True)
+    duels_won = models.PositiveSmallIntegerField(null=True, blank=True)
+    dribbles_succeeded = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    xg = models.FloatField(null=True, blank=True)
+    xg_open_play = models.FloatField(null=True, blank=True)
+    xg_set_play = models.FloatField(null=True, blank=True)
+    xg_non_penalty = models.FloatField(null=True, blank=True)
+    xgot = models.FloatField(null=True, blank=True)
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -210,6 +226,36 @@ class PlayerMatchStatistics(models.Model):
     xg_chain = models.FloatField(null=True, blank=True)
     xg_buildup = models.FloatField(null=True, blank=True)
     key_passes = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    # Dari FotMob. Ini yang paling nambah dibanding ESPN: aksi bertahan per
+    # pemain sama sekali nggak ada di ESPN, padahal itu bahan buat nilai
+    # kebutuhan posisi bertahan di analisis transfer.
+    rating = models.FloatField(null=True, blank=True)
+    touches = models.PositiveSmallIntegerField(null=True, blank=True)
+    touches_opp_box = models.PositiveSmallIntegerField(null=True, blank=True)
+    passes_accurate = models.PositiveSmallIntegerField(null=True, blank=True)
+    passes_into_final_third = models.PositiveSmallIntegerField(null=True, blank=True)
+    long_balls_accurate = models.PositiveSmallIntegerField(null=True, blank=True)
+    dispossessed = models.PositiveSmallIntegerField(null=True, blank=True)
+    chances_created = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    defensive_actions = models.PositiveSmallIntegerField(null=True, blank=True)
+    tackles = models.PositiveSmallIntegerField(null=True, blank=True)
+    blocks = models.PositiveSmallIntegerField(null=True, blank=True)
+    clearances = models.PositiveSmallIntegerField(null=True, blank=True)
+    interceptions = models.PositiveSmallIntegerField(null=True, blank=True)
+    recoveries = models.PositiveSmallIntegerField(null=True, blank=True)
+    dribbled_past = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    duels_won = models.PositiveSmallIntegerField(null=True, blank=True)
+    duels_lost = models.PositiveSmallIntegerField(null=True, blank=True)
+    ground_duels_won = models.PositiveSmallIntegerField(null=True, blank=True)
+    aerial_duels_won = models.PositiveSmallIntegerField(null=True, blank=True)
+    dribbles_succeeded = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    # Khusus kiper, dari FotMob.
+    goals_prevented = models.FloatField(null=True, blank=True)
+    xgot_faced = models.FloatField(null=True, blank=True)
 
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -294,26 +340,72 @@ class MatchShot(models.Model):
         Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='shot_assists'
     )
 
+    # Understat dan FotMob dua-duanya punya shotmap, dan keduanya disimpen —
+    # skala koordinatnya beda (Understat 0..1, FotMob 0..100) jadi jangan
+    # dicampur dalam satu perhitungan tanpa dinormalisasi dulu.
+    source = models.CharField(max_length=30, choices=DataSource.choices)
     external_id = models.CharField(max_length=40)
     minute = models.PositiveSmallIntegerField()
     xg = models.FloatField()
     # Hasil tembakan: Goal, SavedShot, BlockedShot, MissedShots, ShotOnPost,
-    # OwnGoal. Disimpen apa adanya dari Understat.
+    # OwnGoal. Disimpen apa adanya dari provider.
     result = models.CharField(max_length=30)
     situation = models.CharField(max_length=30, blank=True)
     shot_type = models.CharField(max_length=30, blank=True)
     last_action = models.CharField(max_length=40, blank=True)
 
-    # Posisi tembakan, 0..1 relatif ke lapangan (1 = garis gawang lawan).
+    # Posisi tembakan. Skalanya ikut provider (lihat catatan di `source`).
     x = models.FloatField(null=True, blank=True)
     y = models.FloatField(null=True, blank=True)
+
+    # Cuma dari FotMob. xGOT ngukur kualitas eksekusi (seberapa bagus arah
+    # tembakannya), beda dari xG yang ngukur kualitas peluangnya.
+    xgot = models.FloatField(null=True, blank=True)
+    is_on_target = models.BooleanField(null=True, blank=True)
+    is_blocked = models.BooleanField(null=True, blank=True)
+    is_from_inside_box = models.BooleanField(null=True, blank=True)
+    # Titik lintasan bola di bidang gawang — buat gambar peta mulut gawang.
+    goal_crossed_y = models.FloatField(null=True, blank=True)
+    goal_crossed_z = models.FloatField(null=True, blank=True)
 
     class Meta:
         ordering = ['minute']
         indexes = [models.Index(fields=['match', 'minute'])]
         constraints = [
-            models.UniqueConstraint(fields=['external_id'], name='unique_shot_external_id')
+            models.UniqueConstraint(
+                fields=['source', 'external_id'], name='unique_shot_source_external_id'
+            )
         ]
 
     def __str__(self):
         return f'{self.match} - {self.player} {self.minute}\' (xG {self.xg:.2f})'
+
+
+class MatchMomentum(models.Model):
+    """Kurva momentum per menit dari provider.
+
+    Model kita sendiri (matches/momentum.py) tetep yang dipakai buat tampilan,
+    karena jalan di semua kompetisi. Yang ini disimpen sebagai pembanding buat
+    nyetel bobot — dan sebagai cadangan di kompetisi yang play-by-play ESPN-nya
+    terlalu jarang buat dihitung sendiri.
+
+    Nilai bertanda: positif = tim tuan rumah menekan, negatif = tim tamu.
+    """
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='momentum_points')
+    source = models.CharField(max_length=30, choices=DataSource.choices)
+    # Float, bukan integer: FotMob pakai menit pecahan buat injury time
+    # (90.25, 90.5, 90.75). Dibulatkan, titik-titik itu nabrak jadi satu.
+    minute = models.FloatField()
+    value = models.FloatField()
+
+    class Meta:
+        ordering = ['minute']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['match', 'source', 'minute'], name='unique_match_source_minute_momentum'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.match} - {self.source} {self.minute}\': {self.value}'

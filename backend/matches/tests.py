@@ -1,5 +1,6 @@
 from django.test import SimpleTestCase, TestCase
 
+from matches.management.commands.pull_fotmob import Command as PullFotMobCommand
 from matches.management.commands.pull_squad_sdb import Command as PullSquadSdbCommand
 from matches.management.commands.pull_squad import (
     MIN_SQUAD_FOR_DEACTIVATION,
@@ -107,3 +108,39 @@ class ParseHeightTests(SimpleTestCase):
     def test_input_kosong_atau_tanpa_angka(self):
         for value in ('', None, 'unknown'):
             self.assertIsNone(self.parse(value))
+
+
+class FotMobCoerceTests(SimpleTestCase):
+    """Pembacaan nilai statistik FotMob.
+
+    FotMob campur tipe dalam satu payload: angka polos (13), string desimal
+    ('0.79'), dan bentuk berpersentase ('415 (86%)'). Salah baca yang ketiga
+    bikin akurasi umpan kesimpen sebagai 41586.
+    """
+
+    def setUp(self):
+        self.coerce = PullFotMobCommand._coerce
+
+    def test_angka_polos(self):
+        self.assertEqual(self.coerce(13, 'shots_total'), 13)
+
+    def test_string_desimal_ke_float(self):
+        self.assertEqual(self.coerce('0.79', 'xg'), 0.79)
+
+    def test_bentuk_berpersentase_ambil_angka_pertama(self):
+        """Regresi: '415 (86%)' harus jadi 415, bukan 41586."""
+        self.assertEqual(self.coerce('415 (86%)', 'passes_accurate'), 415)
+        self.assertEqual(self.coerce('18 (49%)', 'long_balls_accurate'), 18)
+
+    def test_field_integer_dibulatkan(self):
+        self.assertEqual(self.coerce('7.6', 'touches'), 8)
+
+    def test_field_float_nggak_dibulatkan(self):
+        self.assertEqual(self.coerce('7.6', 'rating'), 7.6)
+
+    def test_nilai_kosong_dan_nggak_valid(self):
+        for value in (None, '', '-', 'n/a'):
+            self.assertIsNone(self.coerce(value, 'touches'))
+
+    def test_bentuk_dict_dengan_total(self):
+        self.assertEqual(self.coerce({'total': 42}, 'touches'), 42)

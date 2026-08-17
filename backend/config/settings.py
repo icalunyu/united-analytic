@@ -228,6 +228,18 @@ ESPN_COMPETITION_SLUGS = os.environ.get(
 # ini first-party data (bukan scraping situs lain). Riwayat lengkap sejak
 # musim 1992/93, cuma cover kompetisi Premier League doang.
 
+# FotMob — API internal situs/app mereka, statusnya sama kayak ESPN (nggak
+# resmi buat pihak ketiga, bisa berubah kapan aja). Nggak butuh key, tapi
+# nolak request tanpa header Referer.
+#
+# Ini satu-satunya sumber gratis yang ngasih aksi bertahan PER PEMAIN
+# (tackles/interceptions/recoveries) dan umpan yang dipisah paruh sendiri vs
+# paruh lawan — dua bahan yang bikin PPDA bisa dihitung.
+
+FOTMOB_BASE_URL = os.environ.get('FOTMOB_BASE_URL', 'https://www.fotmob.com')
+FOTMOB_MU_TEAM_ID = os.environ.get('FOTMOB_MU_TEAM_ID', '10260')
+
+
 # Understat — satu-satunya sumber xG gratis yang cover Premier League.
 # Nggak butuh API key, tapi endpoint JSON-nya cuma jalan kalau request bawa
 # header X-Requested-With (lihat services/understat.py). Cakupannya cuma 6
