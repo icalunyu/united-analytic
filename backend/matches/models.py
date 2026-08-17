@@ -196,8 +196,23 @@ class PlayerMatchStatistics(models.Model):
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='player_match_statistics')
 
     starter = models.BooleanField(default=False)
-    # Nomor urut posisi di formasi (1 = kiper). 0/None buat pemain cadangan.
+    # Nomor urut posisi di formasi dari ESPN (1 = kiper). 0/None buat cadangan.
+    #
+    # HATI-HATI: nomor ini BUKAN urutan per baris. Di 4-2-3-1 milik MU, slot 4
+    # itu Mainoo (gelandang) sementara slot 5 dan 6 Maguire dan Martínez (bek
+    # tengah). Memetakan slot 2-5 sebagai bek empat menghasilkan formasi yang
+    # salah. Buat menggambar formasi, pakai formation_x/formation_y.
     formation_place = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    # Posisi slot di diagram formasi, dari FotMob. Ternormalisasi 0..1:
+    # x = kedalaman (0 = gawang sendiri, 1 = gawang lawan),
+    # y = lebar lapangan.
+    #
+    # Ini posisi SLOT FORMASI, bukan posisi rata-rata pemain dari event —
+    # jangan dilabeli "posisi rata-rata" di UI. Cuma terisi buat pemain yang
+    # masuk starting eleven; cadangan nggak dapat koordinat.
+    formation_x = models.FloatField(null=True, blank=True)
+    formation_y = models.FloatField(null=True, blank=True)
     shirt_number = models.PositiveSmallIntegerField(null=True, blank=True)
     subbed_in = models.BooleanField(default=False)
     subbed_out = models.BooleanField(default=False)

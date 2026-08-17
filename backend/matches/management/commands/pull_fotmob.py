@@ -138,7 +138,7 @@ class Command(BaseCommand):
 
         self.stdout.write(f'{len(fixture_ids)} laga selesai bakal diproses')
 
-        totals = {'match': 0, 'player': 0, 'team': 0, 'shot': 0, 'momentum': 0}
+        totals = {'match': 0, 'player': 0, 'team': 0, 'shot': 0, 'momentum': 0, 'slot': 0}
         skipped = 0
 
         for fixture_id in fixture_ids:
@@ -156,6 +156,7 @@ class Command(BaseCommand):
 
             content = detail.get('content') or {}
             totals['player'] += self._save_player_stats(match, content.get('playerStats') or {})
+            totals['slot'] += self._save_formation_slots(match, content.get('lineup') or {})
             totals['team'] += self._save_team_stats(match, content.get('stats') or {})
             totals['shot'] += self._save_shots(match, content.get('shotmap'))
             totals['momentum'] += self._save_momentum(match, content.get('momentum'))
@@ -169,8 +170,8 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"Selesai. {totals['match']} laga · {totals['player']} statistik pemain · "
-                f"{totals['team']} statistik tim · {totals['shot']} tembakan · "
-                f"{totals['momentum']} titik momentum."
+                f"{totals['slot']} slot formasi · {totals['team']} statistik tim · "
+                f"{totals['shot']} tembakan · {totals['momentum']} titik momentum."
             )
         )
 
@@ -247,6 +248,32 @@ class Command(BaseCommand):
                 match=match, player=player, defaults=values
             )
             saved += 1
+        return saved
+
+    def _save_formation_slots(self, match, lineup):
+        """Simpen koordinat slot formasi buat starting eleven.
+
+        Cuma meng-update baris PlayerMatchStatistics yang udah dibikin
+        _save_player_stats — nggak bikin baris baru, karena pemain yang nggak
+        punya statistik juga nggak punya apa-apa buat ditampilin.
+        """
+        saved = 0
+        for side in ('homeTeam', 'awayTeam'):
+            team_data = lineup.get(side) or {}
+            for entry in team_data.get('starters') or []:
+                layout = entry.get('horizontalLayout')
+                if not entry.get('id') or not isinstance(layout, dict):
+                    continue
+                x, y = layout.get('x'), layout.get('y')
+                if x is None or y is None:
+                    continue
+
+                updated = PlayerMatchStatistics.objects.filter(
+                    match=match,
+                    player__external_refs__source=DataSource.FOTMOB,
+                    player__external_refs__external_id=int(entry['id']),
+                ).update(formation_x=x, formation_y=y)
+                saved += updated
         return saved
 
     def _save_team_stats(self, match, stats):
