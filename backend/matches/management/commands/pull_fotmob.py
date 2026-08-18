@@ -30,6 +30,7 @@ from matches.models import (
 from matches.services import FotMobClient, FotMobError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
+from players.provenance import resolve_updates
 
 REQUEST_DELAY_SECONDS = 0.8
 
@@ -317,10 +318,16 @@ class Command(BaseCommand):
             if not values:
                 continue
 
-            values['team'] = team
-            PlayerMatchStatistics.objects.update_or_create(
-                match=match, player=player, defaults=values
+            row, _ = PlayerMatchStatistics.objects.get_or_create(
+                match=match, player=player, defaults={'team': team}
             )
+            # Cuma tulis field yang FotMob memang berhak isi — provider
+            # berprioritas lebih tinggi nggak boleh ditimpa.
+            updates, sources = resolve_updates(row.field_sources, DataSource.FOTMOB, values)
+            if updates:
+                updates['field_sources'] = sources
+                updates['team'] = team
+                PlayerMatchStatistics.objects.filter(pk=row.pk).update(**updates)
             saved += 1
         return saved
 
@@ -372,11 +379,16 @@ class Command(BaseCommand):
 
         saved = 0
         for side, team in (('home', match.home_team), ('away', match.away_team)):
-            if per_side[side]:
-                MatchTeamStatistics.objects.update_or_create(
-                    match=match, team=team, defaults=per_side[side]
-                )
-                saved += 1
+            if not per_side[side]:
+                continue
+            row, _ = MatchTeamStatistics.objects.get_or_create(match=match, team=team)
+            updates, sources = resolve_updates(
+                row.field_sources, DataSource.FOTMOB, per_side[side]
+            )
+            if updates:
+                updates['field_sources'] = sources
+                MatchTeamStatistics.objects.filter(pk=row.pk).update(**updates)
+            saved += 1
         return saved
 
     def _save_shots(self, match, shotmap):

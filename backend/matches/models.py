@@ -149,6 +149,13 @@ class MatchTeamStatistics(models.Model):
     xg_non_penalty = models.FloatField(null=True, blank=True)
     xgot = models.FloatField(null=True, blank=True)
 
+    # Peta {nama_field: kode_sumber}. Prinsip kedua design handoff: setiap
+    # angka membawa sumbernya. Tanpa ini, satu baris bisa berisi xG dari
+    # Understat dan tekel dari FotMob tanpa ada yang tahu mana dari mana —
+    # dan provider yang jalan terakhir diam-diam menimpa yang lain.
+    # Pengisian & prioritasnya diatur di players/provenance.py.
+    field_sources = models.JSONField(default=dict, blank=True)
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -271,6 +278,13 @@ class PlayerMatchStatistics(models.Model):
     # Khusus kiper, dari FotMob.
     goals_prevented = models.FloatField(null=True, blank=True)
     xgot_faced = models.FloatField(null=True, blank=True)
+
+    # Peta {nama_field: kode_sumber}. Prinsip kedua design handoff: setiap
+    # angka membawa sumbernya. Tanpa ini, satu baris bisa berisi xG dari
+    # Understat dan tekel dari FotMob tanpa ada yang tahu mana dari mana —
+    # dan provider yang jalan terakhir diam-diam menimpa yang lain.
+    # Pengisian & prioritasnya diatur di players/provenance.py.
+    field_sources = models.JSONField(default=dict, blank=True)
 
     updated_at = models.DateTimeField(auto_now=True)
 

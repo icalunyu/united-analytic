@@ -9,6 +9,7 @@ from matches.models import Match, MatchIngest, MatchShot, PlayerMatchStatistics
 from matches.services import UnderstatClient, UnderstatError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
+from players.provenance import resolve_updates
 
 # Understat nggak nyantumin rate limit resmi. Jeda kecil antar match biar
 # nggak ngebanjirin server orang — 38 match jadi ~30 detik, masih aman buat
@@ -214,11 +215,13 @@ class Command(BaseCommand):
                 # update_or_create, bukan overwrite: baris ini kemungkinan udah
                 # diisi ESPN duluan (tembakan, kartu, dll) — di sini cuma
                 # nambahin kolom xG yang cuma Understat yang punya.
-                PlayerMatchStatistics.objects.update_or_create(
-                    match=match,
-                    player=player,
-                    defaults={
-                        'team': team,
+                row, _ = PlayerMatchStatistics.objects.get_or_create(
+                    match=match, player=player, defaults={'team': team}
+                )
+                updates, sources = resolve_updates(
+                    row.field_sources,
+                    DataSource.UNDERSTAT,
+                    {
                         'minutes_played': self._to_int(entry.get('time')),
                         'xg': self._to_float(entry.get('xG')),
                         'xa': self._to_float(entry.get('xA')),
@@ -227,6 +230,10 @@ class Command(BaseCommand):
                         'key_passes': self._to_int(entry.get('key_passes')),
                     },
                 )
+                if updates:
+                    updates['field_sources'] = sources
+                    updates['team'] = team
+                    PlayerMatchStatistics.objects.filter(pk=row.pk).update(**updates)
                 saved += 1
         return saved
 

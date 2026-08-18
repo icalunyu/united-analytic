@@ -12,6 +12,7 @@ from matches.services import EspnClient, EspnError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
 from players.name_utils import team_names_match
+from players.provenance import resolve_updates
 
 
 def _stable_id(name):
@@ -455,35 +456,37 @@ class Command(BaseCommand):
                 s.get('name'): s.get('displayValue') for s in team_stats.get('statistics') or []
             }
 
-            MatchTeamStatistics.objects.update_or_create(
-                match=match,
-                team=team,
-                defaults={
-                    'possession_pct': self._parse_stat_int(stats.get('possessionPct')),
-                    'shots_total': self._parse_stat_int(stats.get('totalShots')),
-                    'shots_on_target': self._parse_stat_int(stats.get('shotsOnTarget')),
-                    'corners': self._parse_stat_int(stats.get('wonCorners')),
-                    'fouls': self._parse_stat_int(stats.get('foulsCommitted')),
-                    'offsides': self._parse_stat_int(stats.get('offsides')),
-                    'yellow_cards': self._parse_stat_int(stats.get('yellowCards')),
-                    'red_cards': self._parse_stat_int(stats.get('redCards')),
-                    'passes_total': self._parse_stat_int(stats.get('totalPasses')),
-                    'passes_accurate': self._parse_stat_int(stats.get('accuratePasses')),
-                    'saves': self._parse_stat_int(stats.get('saves')),
-                    'shots_blocked': self._parse_stat_int(stats.get('blockedShots')),
-                    'crosses_total': self._parse_stat_int(stats.get('totalCrosses')),
-                    'crosses_accurate': self._parse_stat_int(stats.get('accurateCrosses')),
-                    'long_balls_total': self._parse_stat_int(stats.get('totalLongBalls')),
-                    'long_balls_accurate': self._parse_stat_int(stats.get('accurateLongBalls')),
-                    'tackles_total': self._parse_stat_int(stats.get('totalTackles')),
-                    'tackles_won': self._parse_stat_int(stats.get('effectiveTackles')),
-                    'interceptions': self._parse_stat_int(stats.get('interceptions')),
-                    'clearances_total': self._parse_stat_int(stats.get('totalClearance')),
-                    'clearances_effective': self._parse_stat_int(stats.get('effectiveClearance')),
-                    'penalty_goals': self._parse_stat_int(stats.get('penaltyKickGoals')),
-                    'penalty_shots': self._parse_stat_int(stats.get('penaltyKickShots')),
-                },
-            )
+            values = {
+                'possession_pct': self._parse_stat_int(stats.get('possessionPct')),
+                'shots_total': self._parse_stat_int(stats.get('totalShots')),
+                'shots_on_target': self._parse_stat_int(stats.get('shotsOnTarget')),
+                'corners': self._parse_stat_int(stats.get('wonCorners')),
+                'fouls': self._parse_stat_int(stats.get('foulsCommitted')),
+                'offsides': self._parse_stat_int(stats.get('offsides')),
+                'yellow_cards': self._parse_stat_int(stats.get('yellowCards')),
+                'red_cards': self._parse_stat_int(stats.get('redCards')),
+                'passes_total': self._parse_stat_int(stats.get('totalPasses')),
+                'passes_accurate': self._parse_stat_int(stats.get('accuratePasses')),
+                'saves': self._parse_stat_int(stats.get('saves')),
+                'shots_blocked': self._parse_stat_int(stats.get('blockedShots')),
+                'crosses_total': self._parse_stat_int(stats.get('totalCrosses')),
+                'crosses_accurate': self._parse_stat_int(stats.get('accurateCrosses')),
+                'long_balls_total': self._parse_stat_int(stats.get('totalLongBalls')),
+                'long_balls_accurate': self._parse_stat_int(stats.get('accurateLongBalls')),
+                'tackles_total': self._parse_stat_int(stats.get('totalTackles')),
+                'tackles_won': self._parse_stat_int(stats.get('effectiveTackles')),
+                'interceptions': self._parse_stat_int(stats.get('interceptions')),
+                'clearances_total': self._parse_stat_int(stats.get('totalClearance')),
+                'clearances_effective': self._parse_stat_int(stats.get('effectiveClearance')),
+                'penalty_goals': self._parse_stat_int(stats.get('penaltyKickGoals')),
+                'penalty_shots': self._parse_stat_int(stats.get('penaltyKickShots')),
+            }
+
+            row, _ = MatchTeamStatistics.objects.get_or_create(match=match, team=team)
+            updates, sources = resolve_updates(row.field_sources, DataSource.ESPN, values)
+            if updates:
+                updates['field_sources'] = sources
+                MatchTeamStatistics.objects.filter(pk=row.pk).update(**updates)
 
     # Nama stat ESPN -> nama field PlayerMatchStatistics.
     _PLAYER_STAT_FIELDS = {
@@ -552,9 +555,13 @@ class Command(BaseCommand):
                     }
                 )
 
-                PlayerMatchStatistics.objects.update_or_create(
-                    match=match, player=player, defaults=defaults
+                row, _ = PlayerMatchStatistics.objects.get_or_create(
+                    match=match, player=player, defaults={'team': team}
                 )
+                updates, sources = resolve_updates(row.field_sources, DataSource.ESPN, defaults)
+                if updates:
+                    updates['field_sources'] = sources
+                    PlayerMatchStatistics.objects.filter(pk=row.pk).update(**updates)
                 saved += 1
 
         return saved
