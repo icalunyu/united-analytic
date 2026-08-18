@@ -467,3 +467,90 @@ class MatchMomentum(models.Model):
 
     def __str__(self):
         return f'{self.match} - {self.source} {self.minute}\': {self.value}'
+
+
+class RawPayload(models.Model):
+    """Respons mentah dari provider, disimpen sebelum diolah.
+
+    Kenapa perlu: handoff minta laga bisa DIPUTAR ULANG tanpa narik lagi, dan
+    itu prasyarat mode putar ulang di Tahap 6. Tanpa ini, satu-satunya cara
+    nguji panel live adalah nunggu pertandingan berikutnya — cara paling
+    lambat mengembangkan app ini.
+
+    Gunanya yang kedua: kalau parser dibetulin, laga lama bisa diproses ulang
+    dari payload aslinya. Bug tinggi badan 179510 dulu ketahuan berbulan-bulan
+    setelah datanya masuk; dengan ini, perbaikannya bisa diterapkan surut.
+
+    Cuma versi TERAKHIR per (sumber, jenis, kunci) yang disimpen — riwayat
+    tiap penarikan nggak berguna buat putar ulang dan cuma bikin tabel besar.
+    """
+
+    source = models.CharField(max_length=30, choices=DataSource.choices)
+    # Jenis payload, mis. 'match_details' atau 'match_shots'. Satu provider
+    # bisa punya beberapa endpoint dengan bentuk berbeda.
+    kind = models.CharField(max_length=40)
+    # ID milik provider (match id, team id), bukan pk kita.
+    key = models.CharField(max_length=80)
+
+    payload = models.JSONField()
+    fetched_at = models.DateTimeField(auto_now=True)
+    # Ukuran mentah buat mantau pertumbuhan tabel tanpa harus hitung ulang.
+    size_bytes = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['-fetched_at']
+        indexes = [models.Index(fields=['source', 'kind'])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source', 'kind', 'key'], name='unique_raw_payload'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.source}/{self.kind}/{self.key}'
+
+
+class FieldConflict(models.Model):
+    """Dua sumber ngasih nilai berbeda buat field yang sama.
+
+    Sebelumnya selisih begini dibuang diam-diam: resolve_updates cuma nolak
+    nilai dari provider berprioritas lebih rendah tanpa nyatet bahwa mereka
+    nggak sepakat. Padahal prinsip handoff jelas — konflik antar sumber nggak
+    disembunyikan, tapi DITANDAI dan keputusannya diserahkan ke analis.
+
+    Catatan: kartu Konflik Sumber di desain sebenarnya tentang status
+    ketersediaan pemain, bukan nilai statistik. Itu butuh sumber cedera kedua
+    yang belum ada — sekarang cuma Highlightly. Tabel ini nangani konflik yang
+    memang sudah nyata datanya.
+    """
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='field_conflicts')
+    player = models.ForeignKey(
+        Player, on_delete=models.CASCADE, null=True, blank=True, related_name='field_conflicts'
+    )
+    team = models.ForeignKey(
+        Team, on_delete=models.CASCADE, null=True, blank=True, related_name='field_conflicts'
+    )
+
+    field = models.CharField(max_length=60)
+    # Disimpen sebagai teks karena field-nya campur int, float, dan boolean.
+    kept_source = models.CharField(max_length=30, choices=DataSource.choices)
+    kept_value = models.CharField(max_length=60)
+    other_source = models.CharField(max_length=30, choices=DataSource.choices)
+    other_value = models.CharField(max_length=60)
+
+    detected_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-detected_at']
+        indexes = [models.Index(fields=['match', 'field'])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['match', 'player', 'team', 'field', 'other_source'],
+                name='unique_field_conflict',
+            )
+        ]
+
+    def __str__(self):
+        who = self.player or self.team
+        return f'{who} {self.field}: {self.kept_value} ({self.kept_source}) vs {self.other_value} ({self.other_source})'

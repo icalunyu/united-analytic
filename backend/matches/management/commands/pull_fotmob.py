@@ -27,6 +27,7 @@ from matches.models import (
     MatchTeamStatistics,
     PlayerMatchStatistics,
 )
+from matches.ingest_utils import record_conflicts, store_raw
 from matches.services import FotMobClient, FotMobError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
@@ -182,6 +183,8 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f'  gagal narik {fixture_id}: {exc}'))
                 continue
 
+            store_raw(DataSource.FOTMOB, 'match_details', fixture_id, detail)
+
             match = self._resolve_match(detail)
             if match is None:
                 skipped += 1
@@ -321,6 +324,7 @@ class Command(BaseCommand):
             row, _ = PlayerMatchStatistics.objects.get_or_create(
                 match=match, player=player, defaults={'team': team}
             )
+            record_conflicts(row, match, DataSource.FOTMOB, values, player=player)
             # Cuma tulis field yang FotMob memang berhak isi — provider
             # berprioritas lebih tinggi nggak boleh ditimpa.
             updates, sources = resolve_updates(row.field_sources, DataSource.FOTMOB, values)
@@ -382,6 +386,7 @@ class Command(BaseCommand):
             if not per_side[side]:
                 continue
             row, _ = MatchTeamStatistics.objects.get_or_create(match=match, team=team)
+            record_conflicts(row, match, DataSource.FOTMOB, per_side[side], team=team)
             updates, sources = resolve_updates(
                 row.field_sources, DataSource.FOTMOB, per_side[side]
             )

@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from matches.dedup import resolve_match
 from matches.models import Match, MatchIngest, MatchShot, PlayerMatchStatistics
+from matches.ingest_utils import record_conflicts, store_raw
 from matches.services import UnderstatClient, UnderstatError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
@@ -78,6 +79,8 @@ class Command(BaseCommand):
             except UnderstatError as exc:
                 self.stdout.write(self.style.WARNING(f'  gagal narik match {fixture["id"]}: {exc}'))
                 continue
+
+            store_raw(DataSource.UNDERSTAT, 'match_details', fixture['id'], detail)
 
             saved_shots = self._save_shots(match, detail.get('shots') or {})
             saved_players = self._save_player_xg(match, detail.get('rosters') or {})
@@ -218,17 +221,17 @@ class Command(BaseCommand):
                 row, _ = PlayerMatchStatistics.objects.get_or_create(
                     match=match, player=player, defaults={'team': team}
                 )
+                incoming = {
+                    'minutes_played': self._to_int(entry.get('time')),
+                    'xg': self._to_float(entry.get('xG')),
+                    'xa': self._to_float(entry.get('xA')),
+                    'xg_chain': self._to_float(entry.get('xGChain')),
+                    'xg_buildup': self._to_float(entry.get('xGBuildup')),
+                    'key_passes': self._to_int(entry.get('key_passes')),
+                }
+                record_conflicts(row, match, DataSource.UNDERSTAT, incoming, player=player)
                 updates, sources = resolve_updates(
-                    row.field_sources,
-                    DataSource.UNDERSTAT,
-                    {
-                        'minutes_played': self._to_int(entry.get('time')),
-                        'xg': self._to_float(entry.get('xG')),
-                        'xa': self._to_float(entry.get('xA')),
-                        'xg_chain': self._to_float(entry.get('xGChain')),
-                        'xg_buildup': self._to_float(entry.get('xGBuildup')),
-                        'key_passes': self._to_int(entry.get('key_passes')),
-                    },
+                    row.field_sources, DataSource.UNDERSTAT, incoming
                 )
                 if updates:
                     updates['field_sources'] = sources

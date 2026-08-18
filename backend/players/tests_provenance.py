@@ -1,7 +1,7 @@
 from django.test import SimpleTestCase
 
 from players.models import DataSource
-from players.provenance import describe_sources, resolve_updates
+from players.provenance import describe_sources, detect_conflicts, resolve_updates
 
 
 class ResolveUpdatesTests(SimpleTestCase):
@@ -87,3 +87,74 @@ class DescribeSourcesTests(SimpleTestCase):
     def test_kosong_berarti_kosong(self):
         self.assertEqual(describe_sources({}, ['xg']), '')
         self.assertEqual(describe_sources(None, ['xg']), '')
+
+
+class DetectConflictsTests(SimpleTestCase):
+    """Pendeteksi selisih antar sumber.
+
+    Tujuannya bukan mencatat SEMUA perbedaan, tapi cuma yang butuh keputusan
+    manusia. Tanpa penyaringan, satu laga menghasilkan 51 baris dan yang
+    benar-benar penting tenggelam.
+    """
+
+    def setUp(self):
+        self.detect = detect_conflicts
+
+    def test_selisih_nyata_dicatat(self):
+        found = self.detect(
+            {'goals': 2}, {'goals': DataSource.ESPN}, DataSource.FOTMOB, {'goals': 3}
+        )
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['field'], 'goals')
+        # FotMob prioritasnya lebih tinggi, jadi dia yang dipertahankan.
+        self.assertEqual(found[0]['kept_source'], DataSource.FOTMOB)
+        self.assertEqual(found[0]['kept_value'], '3')
+        self.assertEqual(found[0]['other_value'], '2')
+
+    def test_nilai_sama_bukan_konflik(self):
+        found = self.detect(
+            {'goals': 2}, {'goals': DataSource.ESPN}, DataSource.FOTMOB, {'goals': 2}
+        )
+        self.assertEqual(found, [])
+
+    def test_beda_tipe_tapi_nilai_sama_bukan_konflik(self):
+        """Provider sering ngirim 70 vs 70.0."""
+        found = self.detect(
+            {'minutes_played': 70}, {'minutes_played': DataSource.ESPN},
+            DataSource.FOTMOB, {'minutes_played': 70.0},
+        )
+        self.assertEqual(found, [])
+
+    def test_field_hasil_model_diabaikan(self):
+        """xG dua provider memang selalu beda — itu dua model, bukan data rusak."""
+        found = self.detect(
+            {'xg': 0.80}, {'xg': DataSource.UNDERSTAT}, DataSource.FOTMOB, {'xg': 0.35}
+        )
+        self.assertEqual(found, [])
+
+    def test_selisih_menit_kecil_ditoleransi(self):
+        """Selisih 3-4 menit itu beda jam pertandingan yang sistematis:
+        pemain 90 menit selalu sepakat, yang kena pergantian selalu beda."""
+        found = self.detect(
+            {'minutes_played': 62}, {'minutes_played': DataSource.UNDERSTAT},
+            DataSource.FOTMOB, {'minutes_played': 65},
+        )
+        self.assertEqual(found, [])
+
+    def test_selisih_menit_besar_tetap_ditandai(self):
+        """Toleransi bukan pengecualian total — 40 menit itu memang salah."""
+        found = self.detect(
+            {'minutes_played': 20}, {'minutes_played': DataSource.UNDERSTAT},
+            DataSource.FOTMOB, {'minutes_played': 90},
+        )
+        self.assertEqual(len(found), 1)
+
+    def test_sumber_yang_sama_nggak_konflik_dengan_dirinya(self):
+        found = self.detect(
+            {'goals': 2}, {'goals': DataSource.FOTMOB}, DataSource.FOTMOB, {'goals': 3}
+        )
+        self.assertEqual(found, [])
+
+    def test_field_yang_belum_punya_sumber_bukan_konflik(self):
+        found = self.detect({'goals': 2}, {}, DataSource.FOTMOB, {'goals': 3})
+        self.assertEqual(found, [])
