@@ -1,0 +1,605 @@
+# Catatan Perubahan Besar — Fondasi Data MU Analytics
+
+Dokumen ini merekam satu rentetan kerja yang mengubah lapisan data proyek ini
+dari "cukup untuk 5 halaman sederhana" jadi "siap membangun Meja Analisis
+7 halaman" sesuai design handoff.
+
+Ditulis supaya keputusan dan jebakannya tidak hilang. Banyak temuan di sini
+hanya kelihatan sekali — kalau tidak dicatat, orang berikutnya (atau kita
+sendiri tiga bulan lagi) akan menabraknya lagi.
+
+Rentang: commit `43f7ed8` sampai `0b0ea9d`, 15 commit.
+Semua angka diverifikasi langsung ke database produksi, bukan dari ingatan.
+
+---
+
+## 1. Ringkasan angka
+
+| | Awal | Akhir |
+|---|---|---|
+| Match | 375 | **717** (342 tanpa MU) |
+| Player | 481 | 1.370 |
+| "Skuad MU aktif" | **294** (salah) | **38** (benar) |
+| Statistik pemain per laga | 0 | **12.306** |
+| Statistik tim per laga | 11 field | **40 field**, 776 baris |
+| Tembakan ber-xG | 0 | **9.541** |
+| Momentum per menit | 0 | 35.624 titik |
+| Play-by-play berkoordinat | 0 | 3.171 |
+| Baris statistik bernama ganda | 26 | **0** |
+| Jejak sumber per angka | tidak ada | **96%** |
+| Database | SQLite 15 MB | **Postgres 38 MB** |
+| Test | 0 | **61** |
+| Sumber data aktif | 6 | 8 |
+
+---
+
+## 2. Tiga keputusan penentu lingkup
+
+Design handoff menuntut hal-hal yang tidak semuanya bisa dipenuhi data gratis.
+Tiga keputusan ini menentukan bentuk produk, dan ketiganya sudah dijawab.
+
+### Keputusan 01 — Kartu Lapangan kehilangan 3 dari 4 lapisan
+
+**Masalah.** Desain minta empat lapisan: Jaringan umpan, Heatmap, Zona,
+Tembakan. Tiga yang pertama butuh koordinat **setiap sentuhan**. Kita punya
+72 event per laga dengan koordinat hanya pada tembakan, pelanggaran, dan sepak
+pojok. Feed penuh berisi 1.500–2.000 event.
+
+**Diuji, bukan diasumsikan.** FBref (403), WhoScored (403), Sofascore (koneksi
+ditolak di level TLS), StatsBomb Open Data (Premier League terbaru 2015/2016).
+Diuji dari dua lokasi berbeda: sandbox dan server produksi. Tidak ada penyedia
+gratis yang memberi event stream penuh untuk EPL musim berjalan.
+
+**Keputusan: ganti dengan visual dari data yang ada.** Bentuk penggantinya
+sudah dirancang dan diuji memakai data asli:
+
+| Lapisan asli | Jadi |
+|---|---|
+| Tembakan | **Utuh**, malah lebih kaya (xGOT + peta mulut gawang) |
+| Jaringan umpan | **Tabel keterlibatan** — sengaja bukan di atas lapangan |
+| Heatmap | **Peta kejadian**, 46 titik, kerapatannya dibiarkan terlihat jarang |
+| Zona 6×3 | **Teritori** dua wilayah dari umpan per paruh |
+
+**Catatan desain yang penting.** Tabel keterlibatan sengaja *tidak* digambar
+di lapangan. Kita tahu berapa kali seorang pemain menyentuh bola, tapi tidak
+tahu **di mana**. Menggambarnya di lapangan berarti mengarang posisi. Alasan
+yang sama dipakai untuk menolak membuat heatmap dari 46 titik: hasilnya akan
+terlihat padat dan meyakinkan padahal isinya hampir tidak ada.
+
+### Keputusan 02 — Cakupan liga
+
+**Masalah.** 375 laga di database, **nol** di antaranya tanpa MU. Enam card di
+handoff butuh tolok ukur se-liga: Indeks Kebutuhan Skuad (persentil 60 liga),
+Pemain Kunci (z-score per posisi), Profil Lawan (bar persentil), Fakta
+Pendukung ("3 teratas/terbawah liga"), Hipotesis Taktik, Spesifikasi Profil.
+
+**Koreksi perhitungan saya sendiri.** Awalnya saya menaksir opsi ini butuh
+**760 panggilan API per hari** dan menjadikannya alasan utama menahan. Itu
+salah — saya memproyeksikan perilaku boros command yang ada (menarik ulang
+semua laga selesai tiap malam) ke skala 10×. Laga yang sudah selesai datanya
+final. Angka sebenarnya setelah ingestion dibuat inkremental: **~4 panggilan
+per hari**, lebih ringan dari sebelumnya. Dugaan saya 197× kelewat tinggi.
+
+**Keputusan: tarik seluruh liga.** Backfill 380 laga Premier League 2025/26.
+
+**Kekhawatiran yang tidak terbukti.** Saya memperingatkan duplikat akan naik
+10×. Hasilnya: pemain hanya naik 11% (1.254 → 1.390), tim tidak bertambah sama
+sekali, dan `merge_duplicates` menemukan **nol** duplikat baru. Sebabnya
+FotMob mengirim ID pemain sendiri, jadi pencocokan nama — sumber duplikat
+sebelumnya — praktis tidak pernah jalan di jalur ini.
+
+### Keputusan 03 — Jejak sumber per angka
+
+**Masalah, dan lebih besar dari sekadar metadata.** Prinsip kedua handoff:
+setiap angka membawa sumbernya. Selain tidak ada jejaknya, ternyata provider
+**saling menimpa diam-diam**: 5.678 baris punya `xg` (Understat) sekaligus
+`rating` (FotMob), dan nilai `xg` yang tersimpan tergantung cron mana yang
+jalan terakhir malam itu.
+
+Field yang diperebutkan: 13 antara FotMob dan ESPN, 3 antara FotMob dan
+Understat.
+
+**Keputusan: bangun sekarang, sebelum ada halaman yang membacanya.**
+`field_sources` (JSONB) + `players/provenance.py`.
+
+**Prioritas yang dipilih.** Default FotMob > Understat > ESPN berdasar
+kelengkapan. Satu pengecualian disengaja: **semua turunan xG** (`xg`, `xa`,
+`xg_chain`, `xg_buildup`, `key_passes`, `minutes_played`) dipegang Understat,
+supaya angka-angka itu datang dari satu model yang sama dan konsisten satu
+sama lain.
+
+**Konsekuensi yang sengaja dibiarkan.** xG pemain dari Understat, xG tim dari
+FotMob — total tim **tidak akan persis sama** dengan jumlah xG pemainnya. Itu
+sifat menggabung provider, bukan bug. Bedanya sekarang ketidakcocokan itu
+kelihatan lewat `field_sources`, bukan tersembunyi.
+
+---
+
+## 3. Sumber data
+
+### Yang ditambahkan
+
+**FotMob** (`pull_fotmob`) — penambahan data terbesar yang tersedia gratis.
+Endpoint `api/data/matchDetails`, tanpa API key, cukup header `Referer`.
+
+Yang hanya ada di sini:
+- **Aksi bertahan per pemain** (tackles, interceptions, recoveries, dribbled
+  past, blocks, clearances). ESPN tidak punya satu pun.
+- **Umpan dipisah paruh sendiri vs paruh lawan** → membuat PPDA bisa dihitung.
+- **xGOT** (kualitas eksekusi, beda dari xG yang kualitas peluang) + titik
+  lintasan bola di mulut gawang.
+- **Kurva momentum per menit**, skala −100..100.
+- **Koordinat slot formasi** ternormalisasi 0–1.
+
+**Understat** (`pull_xg_understat`) — xG level tembakan + xA/xGChain/xGBuildup
+dan menit bermain per pemain.
+
+> **Jebakan:** struktur lama (`datesData`, `shotsData` tertanam di HTML) yang
+> dipakai hampir semua tutorial scraping **sudah dihapus**. Datanya pindah ke
+> endpoint JSON `getTeamData/` dan `getMatchData/`, dan satu-satunya syarat
+> akses adalah header `X-Requested-With: XMLHttpRequest`. Tanpa itu server
+> membalas **404**, bukan 403 — jadi kalau suatu hari command ini mendadak 404
+> semua, tersangka pertamanya syarat header, bukan match-nya yang tidak ada.
+
+### Yang diuji dan ditolak
+
+| Sumber | Sandbox | Server produksi | Catatan |
+|---|---|---|---|
+| FBref | 403 | 403 | anti-scraping, konsisten |
+| WhoScored | 403 | 403 | Incapsula |
+| Sofascore | koneksi ditolak | — | diblokir di level TLS |
+| StatsBomb Open Data | 200 | — | Premier League terbaru **2015/2016** |
+
+StatsBomb tetap berguna, bukan untuk data MU tapi untuk **membangun dan
+menguji model** — kalau nanti bikin grid xT sendiri, datanya lengkap dan gratis
+di situ.
+
+### ESPN — dipakai jauh lebih dalam
+
+Sebelumnya `pull_match_events_espn` membuang sebagian besar payload yang sudah
+diunduh. Sekali jalan sekarang menyimpan:
+
+- **Event** (gol/kartu/substitusi) → `MatchEvent`, untuk timeline
+- **Seluruh play-by-play** berikut koordinat lapangan → `MatchPlay`
+- **28 statistik tim** (dari 11)
+- **Statistik per pemain per laga** + formasi awal
+- **Payload mentah** → `RawPayload`
+
+---
+
+## 4. Bug yang ditemukan
+
+Delapan bug, semuanya ditemukan sambil mengerjakan hal lain — dan semuanya
+diam.
+
+### 4.1 ESPN mengirim play duplikat
+96 entri `commentary` hanya berisi **60 `play.id` unik**. Dedup awal memakai
+`sequence` (yang memang unik per entri), sehingga duplikatnya lolos dan
+menggelembungkan momentum **22%**. Kunci dedup harus `play.id`.
+
+### 4.2 `_team_by_name` salah atribusi
+Fallback-nya mengembalikan `home_team` kapan pun nama tidak cocok persis. Jadi
+event tim tamu dengan varian nama (`"Brighton and Hove Albion"` vs
+`"Brighton & Hove Albion"`) tercatat ke tuan rumah. Sekarang memakai matcher
+dedup yang sama dan mengembalikan `None` kalau ragu.
+
+### 4.3 `field_x = 0.0` bukan koordinat
+Itu penanda "tidak ada data" untuk kartu dan substitusi. Kalau dianggap
+koordinat asli, kartu terbaca sebagai kejadian tepat di mulut gawang.
+
+### 4.4 Diakritik tidak dilipat di pencocokan nama
+`Šeško` ≠ `Sesko`, `Bayındır` ≠ `Bayindir`, `Vítek` ≠ `Vitek`. Provider yang
+menulis beraksen (Highlightly) membuat record baru alih-alih mencocok.
+
+> Bug ini **menyembunyikan dirinya sendiri**: deteksi duplikat yang memakai
+> kunci yang sama melaporkan **nol** duplikat. Baru setelah diakritiknya
+> dilipat terpisah, ketahuan ada 3 pasang di lokal saja.
+
+Sisi tim lebih parah lagi: `_NON_ALNUM_PATTERN` mengubah karakter non-ASCII
+jadi **spasi**, jadi `Beşiktaş` bukan cuma beda ejaan tapi tercabik jadi
+`'be ikta'`.
+
+NFKD saja tidak cukup — `ı` (dotless i Turki), `ø`, `đ`, `ł` tidak punya
+dekomposisi dan butuh peta manual.
+
+### 4.5 Parser tinggi badan menggabungkan semua digit
+`"179 cm (5 ft 10 in)"` → `179` + `5` + `10` = **`179510`**. SQLite menerimanya
+diam-diam karena tidak menegakkan batas kolom; Postgres langsung menolak
+(`smallint out of range`) saat migrasi.
+
+**Ini alasan konkret kenapa pindah ke Postgres itu benar:** data rusak yang
+tersembunyi berbulan-bulan jadi kelihatan.
+
+### 4.6 `is_active` tidak pernah disetel
+Defaultnya `True` dan tidak ada satu pun command yang pernah mengubahnya. Jadi
+setiap pemain yang pernah tercatat di MU terhitung "Skuad Aktif" selamanya —
+termasuk yang pindah bertahun-tahun lalu dan hanya terbawa dari data historis
+Premier League.
+
+### 4.7 ESPN tidak mencatat ingest
+Kartu Kesehatan Sumber menampilkan ESPN **"berhenti"** padahal justru dia yang
+paling sering jalan (tiap 10 menit). Dibiarkan, indikator itu akan terus
+memberi alarm palsu untuk feed paling sehat, dan analis berhenti
+mempercayainya.
+
+### 4.8 `formation_place` bukan urutan per baris
+Di 4-2-3-1 milik MU, urutan slot untuk susunan sebenarnya adalah
+**1, 3, 6, 5, 2, 8, 4, 11, 10, 7, 9**. Slot 4 itu Mainoo (gelandang),
+sementara slot 5 dan 6 adalah Maguire dan Martínez (bek tengah). Memetakan
+slot 2–5 sebagai bek empat menghasilkan formasi yang salah di layar **tanpa
+ada yang sadar**. Untuk menggambar formasi, pakai `formation_x`/`formation_y`
+dari FotMob.
+
+---
+
+## 5. Krisis kualitas data: 294 → 38
+
+Setelah deploy, halaman Skuad menampilkan **294 pemain "MU aktif"**. Angka
+sebenarnya 58. Ini terlihat langsung oleh pengguna.
+
+Diagnosisnya dilakukan dengan reproduksi lokal, bukan tebakan:
+
+| Command | Efek ke jumlah skuad |
+|---|---|
+| `pull_match_events_espn` (8 kompetisi) | 58 → 62 (+4) |
+| `pull_squad`, `pull_squad_sdb` | tidak berubah |
+| `pull_match_events_pl`, `pull_injuries` | tidak berubah |
+| **`pull_match_events` (Highlightly)** | **62 → 83 dalam satu run** |
+
+Pembersihannya berlapis:
+
+1. **`fold_accents`** — menghentikan pembentukan duplikat baru (bug 4.4)
+2. **`merge_duplicates`** — menggabungkan 3 tim + 32 pemain duplikat
+3. **`clean_commentary_players`** — 243 baris sampah parser regex lama;
+   177 di antaranya pemain klub lain, sisanya potongan kalimat commentary
+   seperti `'Bruno Fernandes with a cross following a corner'`
+4. **`is_active` di `pull_squad`** — 65 mantan pemain ditandai non-aktif
+5. **Penggabungan co-occurrence** — 15 pasangan terakhir (bagian 6)
+
+**Prinsip yang dipegang di semua alat pembersih:** default *dry run*, harus
+`--apply` untuk menulis. Referensi FK di-enumerate **dinamis** dari `_meta`,
+bukan di-hardcode — mayoritas FK ke `Team` itu `CASCADE`, jadi satu referensi
+terlewat berarti `Match` ikut terhapus diam-diam.
+
+---
+
+## 6. Duplikat terakhir: satu orang, dua record
+
+26 baris statistik bernama ganda ternyata **bukan kasus ambigu**:
+
+```
+Antoine Semenyo — laga sama, tim sama, 90 menit
+  id=445   sumber=[espn, espn_commentary, premier_league, understat]
+  id=1526  sumber=[fotmob]
+```
+
+Satu record memegang xG, satunya memegang sentuhan.
+
+**Kenapa `merge_duplicates` melewatkannya:** ia mengelompokkan per
+`Player.team`, dan ke-30 record ini punya `Player.team` **berbeda** — tiap
+record terakhir disentuh provider berbeda yang menyebut klub berbeda. Beberapa
+bahkan sisa bug 4.2 (Josh Cullen dan James Hill ter-set
+`Player.team = Manchester United` padahal bukan pemain MU).
+
+**Bukti identitas yang dipakai jalur baru:** muncul di **laga dan tim yang
+sama**. Dua orang berbeda tidak mungkin dua-duanya bermain di satu laga untuk
+satu tim dengan nama sama.
+
+> **Bagian yang paling mudah salah:** isi kedua baris statistik harus
+> **disatukan dulu** sebelum row-nya dibuang. Tanpa itu `absorb()` menghapus
+> baris yang bentrok unique `(match, player)` — dan separuh datanya ikut
+> hilang. Justru di situ masalahnya: satu punya xG, satunya punya sentuhan.
+
+**Efek samping:** setelah duplikat digabung, `clean_commentary_players` bisa
+menyelesaikan **5 kasus yang sebelumnya ambigu** — ambiguitasnya hilang karena
+kandidat gandanya sudah menyatu. Ekor ambigu turun 15 → 10.
+
+---
+
+## 7. Migrasi ke Postgres
+
+**Temuan:** produksi jalan di SQLite, padahal kredensial Postgres sudah
+lengkap di `.env` dan driver `psycopg` terpasang.
+
+**Dua penyebab, keduanya menjebak:**
+
+1. **`DB_ENGINE` kosong.** `settings.py` memakainya sebagai saklar dengan
+   SQLite sebagai fallback — jadi Django jatuh ke SQLite **tanpa error, tanpa
+   warning**. Kelihatan jalan padahal Postgres tidak tersentuh.
+
+2. **cPanel menambahkan awalan nama akun** ke database **dan** user, serta
+   membuang tanda hubung. Yang di `.env` tertulis `mu-analytics` / `ical`,
+   aslinya `musafarw_muanalytics` / `musafarw_ical`.
+
+> **Koreksi diagnosis sebelumnya.** Sesi Claude lain menyimpulkan ini bug
+> konfigurasi server dan menyarankan menghubungi support DomaiNesia. Itu tidak
+> didukung bukti. Postgres membalas `no pg_hba.conf entry` **justru karena**
+> user dan database yang diminta tidak ada. Begitu diuji dengan nama asli,
+> errornya berubah jadi `password authentication failed` — artinya koneksi
+> lolos tahap `pg_hba` dan konfigurasi server baik-baik saja. Diuji lewat tiga
+> jalur (TCP `127.0.0.1`, `localhost`, Unix socket), semuanya sampai ke tahap
+> password. **Tiket ke support tidak diperlukan.**
+
+**Cara memastikan nama aslinya:** `uapi Postgresql list_databases`.
+
+**Hasil migrasi:** 15.370 objek, **12 model cocok jumlahnya**, 17 sequence
+diperiksa dan semuanya aman (kalau tidak, insert cron berikutnya bentrok
+duplicate key).
+
+**Catatan `DB_HOST`:** dikosongkan = lewat Unix socket. Default `'localhost'`
+di `settings.py` **hanya** berlaku kalau variabelnya tidak ada sama sekali,
+bukan kalau ada tapi kosong.
+
+---
+
+## 8. Operasional
+
+### Cron
+
+Jam server **WIB (UTC+7)**, bukan UTC. Laga MU jatuh 18:00–06:00 WIB — larut
+malam di sini. Kalau dijadwalkan dengan asumsi UTC, polling rapat justru jatuh
+saat tidak ada pertandingan.
+
+```
+*/10 0-5,18-23   pull_match_events_espn    jendela laga
+0    6-17        pull_match_events_espn    di luar itu
+0    */3         pull_fixtures_fd
+03:50            rotate-logs.sh
+04:00            pull_squad_sdb
+04:05            pull_injuries
+04:10            pull_match_events_pl
+04:15            pull_squad
+04:20            pull_xg_understat
+04:25            pull_fotmob               kompetisi MU (piala, Eropa)
+04:35            pull_fotmob --league      380 laga PL
+```
+
+Beban turun dari ~288 run/hari jadi ~93.
+
+> **Kegagalan senyap yang harus diingat.** Satu instalasi crontab terlihat
+> sukses tapi entrinya **hilang** — file 50 baris diterima, yang tersimpan 43,
+> persis blok yang baru ditambahkan, tanpa pesan error apa pun. Percobaan
+> kedua dengan komentar ASCII satu baris berhasil. Akar penyebabnya belum
+> dikonfirmasi. **Selalu verifikasi entri benar-benar ada setelah
+> `crontab <file>`; jangan percaya pada tidak adanya error.**
+
+> **Jebakan kedua:** `crontab -l` di cPanel ini mencetak baris
+> `Backup of musafarw's previous crontab saved to ...` ke **stdout**. Setiap
+> siklus baca–edit–tulis akan menanamkannya kembali ke dalam crontab. Saring
+> baris itu sebelum menulis ulang.
+
+### Rotasi log
+
+`logrotate` tidak tersedia untuk user di hosting ini (tidak ada di PATH maupun
+`/usr/sbin`). Diganti [`scripts/rotate-logs.sh`](scripts/rotate-logs.sh),
+harian 03:50, simpan 3 arsip `.gz`, rotasi hanya kalau > 1 MB.
+
+> Log **disalin lalu dikosongkan di tempat**, bukan di-`mv`. Job cron yang
+> kebetulan sedang jalan masih memegang file descriptor ke inode itu — kalau
+> filenya dipindah, output-nya nyasar ke arsip dan hilang dari log aktif.
+
+### Deploy
+
+Server **bukan git repo** — deploy dilakukan dengan mengunggah file. Urutan
+`git pull` di README tidak berlaku di sana. Konsekuensinya: tidak ada
+`git status` yang bisa memberi tahu kalau ada penyimpangan; ketahuannya hanya
+lewat pembandingan checksum manual.
+
+Layout di server diratakan: `~/mu-analytics/players/`, bukan
+`~/mu-analytics/backend/players/`.
+
+Autentikasi memakai SSH key `portoical_deploy` yang sudah diotorisasi di host
+itu. Password plaintext di `how-to-deploy.md` tidak dipakai dan layak dirotasi
+(file itu ter-gitignore dan **tidak pernah** masuk history git — sudah dicek).
+
+---
+
+## 9. Model momentum
+
+Dihitung sendiri di [`matches/momentum.py`](backend/matches/momentum.py) dari
+play-by-play ESPN. Tiap kejadian dibobot menurut bahayanya, dikali kedekatan
+ke gawang dari koordinat lapangan, lalu disebar ke menit sekitarnya. Nilainya
+bertanda: positif tuan rumah, negatif tamu.
+
+**Semantik `field_x` yang perlu diingat:** itu **jarak ke gawang yang
+diserang** (0 = di garis gawang). Diverifikasi dari data: gol rata-rata 0,08–0,23
+sementara pelanggaran 0,62. Dan `team` pada play `foul` adalah tim
+**pelanggar**, jadi tekanan dikreditkan ke lawannya.
+
+**Kalibrasi.** `calibrate_momentum` awalnya menembak Sofascore dan tidak
+pernah bisa diuji karena endpoint mereka menolak koneksi dari mana pun.
+Dialihkan ke FotMob, yang memberi data berbentuk sama dan bisa dijangkau.
+Sekarang membaca dari database, jadi tidak menyentuh jaringan.
+
+Patokan sekarang: korelasi rata-rata **+0,44** (Brighton +0,53, Forest +0,36).
+Di bawah ambang 0,6 — masih ada ruang setel di `PLAY_WEIGHTS`, bedanya
+sekarang hasil setelan itu **terukur**.
+
+FotMob tidak memberi momentum untuk laga persahabatan (`momentum: false`),
+jadi model sendiri tetap yang dipakai untuk tampilan karena jalan di semua
+laga.
+
+---
+
+## 10. Jebakan parsing yang berulang
+
+Tiga kali pola yang sama muncul dan layak diwaspadai:
+
+1. **Tinggi badan** — semua digit digabung: `179510` (bug 4.5)
+2. **Statistik FotMob** — nilai campur tipe dalam satu payload: angka polos
+   (`13`), string desimal (`'0.79'`), dan berpersentase (`'415 (86%)'`). Yang
+   terakhir kalau dibaca mentah jadi `41586`.
+3. **Menit momentum FotMob** — **pecahan** untuk injury time (`90.25`, `90.5`,
+   `90.75`). Disimpan sebagai integer, ketiganya membulat jadi 90 dan
+   bertabrakan di unique constraint.
+
+Ketiganya sekarang punya test regresi.
+
+---
+
+## 11. Pendeteksi konflik: butuh dua penyaringan
+
+Percobaan pertama menghasilkan **51 konflik dalam satu laga**. Tidak ada analis
+yang akan membaca itu.
+
+**Penyaringan 1 — field hasil model.** Mayoritas konflik adalah xG dan xA:
+`0.80 (Understat) vs 0.35 (FotMob)`. Itu **dua model berbeda mengukur hal yang
+sama**, selalu selisih, selamanya. Bukan data rusak. → `MODELLED_FIELDS`
+
+**Penyaringan 2 — selisih sistematis.** Sisa 20 semuanya `minutes_played`,
+selisih 3–4 menit. Diukur: **13 pemain yang bermain 90 menit penuh sepakat
+persis**, dan semua yang terlibat pergantian berselisih. Itu perbedaan jam
+pertandingan antar provider, bukan kesalahan, dan tidak butuh keputusan
+analis. → `FIELD_TOLERANCE`
+
+Toleransi, bukan pengecualian total: selisih 40 menit tetap ditandai.
+
+**Hasil 51 → 0** untuk laga itu, dan nol adalah jawaban yang benar.
+
+> **Kartu Konflik Sumber di desain sebenarnya tentang status ketersediaan
+> pemain**, bukan nilai statistik. Itu butuh **sumber cedera kedua** yang
+> belum ada — sekarang hanya Highlightly, jadi tidak ada yang bisa berkonflik.
+
+---
+
+## 12. Batas yang diketahui
+
+Tidak bisa dibangun dengan data gratis, **sudah diuji**:
+
+- **Jaringan umpan, Heatmap, Zona 6×3** — butuh koordinat tiap sentuhan
+- **xT per aksi** — butuh nilai posisi tiap aksi
+- **Detektor tempo** — ambangnya "perubahan umpan per menit"; umpan hanya
+  tersedia sebagai total per babak
+- **Detektor pressing** — ambangnya PPDA jendela 15 menit. PPDA-nya sendiri
+  bisa dihitung, tapi statistik tim FotMob hanya `All / FirstHalf / SecondHalf`
+- **Posisi rata-rata pemain** — desain mendefinisikannya sebagai median semua
+  aksi. FotMob memberi koordinat slot formasi, bukan posisi sebenarnya
+- **Sebaran aksi di dialog Detail Pemain**
+
+Satu-satunya data FotMob yang benar-benar per menit adalah kurva momentum.
+
+**Sisa pekerjaan manual:** 10 kasus ambigu yang `clean_commentary_players`
+menolak menebak (contoh: `Daniel James`, pernah di MU sekarang di Leeds, jadi
+ada dua record asli). Menempelkan event ke orang yang salah lebih buruk
+daripada menyisakannya. Tempatnya sudah ada di desain — kartu Konflik Sumber.
+
+**424 baris tanpa jejak sumber** dari laga lama yang hanya dicover ESPN. Bukan
+bug — kita memang tidak tahu asalnya karena ditulis sebelum sistem provenance
+ada. Handoff punya aturannya: kalau tidak jelas asalnya, jangan ditampilkan.
+
+---
+
+## 13. Kesalahan saya di sesi ini
+
+Dicatat supaya tidak terulang dan supaya konteksnya jujur.
+
+**Klaim salah soal `.env` di git.** Saya menyebut `.env` dan `db.sqlite3`
+ter-track git dan menyarankan rotasi API key. Salah — saya membacanya dari
+listing filesystem, bukan index git. Keduanya ter-gitignore sejak awal dan
+tidak pernah bocor.
+
+**Alarm palsu soal file tertimpa.** Saya melaporkan telah menimpa
+`prod.html`/`prod81.html` milik user. Setelah diperiksa lewat waktu pembuatan
+inode: **saya sendiri yang membuat keduanya**. Sumber kekeliruan: blok "git
+status di awal percakapan" di konteks saya ternyata bukan dari awal sungguhan.
+
+**Perhitungan 760 panggilan/hari.** Salah 197×, dan sempat jadi alasan utama
+menahan keputusan 02.
+
+**Delapan proses latar tertinggal.** Tiap kali loop pemantau kena timeout, saya
+membuat yang baru tanpa menghentikan yang lama — empat kali berturut-turut.
+Yang tertua berjalan 1 jam 21 menit, polling SSH ke server tiap 20–30 detik
+untuk pekerjaan yang sudah lama selesai. Seharusnya: satu perintah yang
+berhenti sendiri, dan hentikan yang lama sebelum membuat pengganti.
+
+**Penyaring inkremental salah tempat.** Awalnya saya taruh **sesudah**
+panggilan API — tidak menghemat apa pun, karena yang mahal justru request-nya.
+
+**Dua bug UI di mockup:** `.zone` diberi `position:absolute` sehingga keluar
+dari grid dan menciut jadi 20px (angkanya benar dari awal, hanya tidak
+terlihat), dan teks non-ASCII yang saya tulis langsung di JS rusak encoding-nya
+— nama pemain aman karena `json.dumps` sudah meng-escape, string tulisan
+tangan tidak.
+
+**Commit yang menyapu folder tak terkait.** `git add -A` ikut memasukkan
+`analytic-from-claude-design/` (4,5 MB) ke commit tentang parser tinggi badan.
+
+---
+
+## 14. Status per tahap design handoff
+
+| Tahap | Status |
+|---|---|
+| 0 — Fondasi data | **7/7 selesai** |
+| 1 — Penarikan & rekonsiliasi | **6/6 selesai** |
+| 2 — Halaman rujukan (Skuad, Statistik, Berita) | 0/7 |
+| 3 — Metrik turunan | 1/5 (momentum) |
+| 4 — Pasca laga | 0/6 |
+| 5 — Pra laga | 0/7 |
+| 6 — Live | 0/9 |
+| Lintas halaman | 0/5 |
+
+**Belum ada satu halaman desain pun dibangun.** Semua kerja ini di lapisan
+data — dan itu urutan yang benar menurut handoff.
+
+### Yang direkomendasikan berikutnya
+
+**Tahap 2, mulai dari Statistik.** Alasannya: datanya sudah lengkap dan tinggal
+dibaca; model `PlayerSeasonStats` yang dibutuhkan **juga** merupakan tabel
+tolok ukur untuk Indeks Kebutuhan Skuad, Pemain Kunci, dan Profil Lawan di
+tahap berikutnya; dan kriteria selesainya tegas dari handoff — *"filter musim
+dan kompetisi menghasilkan angka yang cocok dengan hitungan manual dari data
+laga"*.
+
+### Dua butir kritis yang mudah terlewat
+
+- **`Hypothesis` dengan cap waktu pra-kickoff** (Tahap 5). Tanpa ini panel Cek
+  Prediksi — yang handoff sebut pembeda utama produk — tidak punya dasar. Dan
+  ini **tidak bisa ditambal belakangan**: prediksi yang tidak tersimpan sebelum
+  kick-off hilang selamanya.
+- **Mode putar ulang sebelum mode langsung** (Tahap 6). Handoff tegas soal ini.
+  Prasyaratnya `RawPayload` sudah ada.
+
+### Menggantung
+
+- Understat `getLeagueData` — satu panggilan memberi 537 pemain se-liga dengan
+  npxG dan xGChain. Melengkapi tolok ukur sisi serangan yang FotMob tidak punya.
+- `pull_fixtures_fd` masih tiap 3 jam. Ia juga menyimpan skor dan status, jadi
+  berfungsi sebagai cadangan kalau ESPN mati — sengaja tidak diturunkan lebih
+  jauh.
+
+---
+
+## 15. Daftar commit
+
+```
+4153bd2  Siapkan deploy cPanel + fix guard nama pemain Highlightly
+af9c018  Tambah momentum serangan, timeline match, & xG Understat
+72cef81  Lipat aksen di pencocokan nama + command gabung duplikat
+2b60e92  Command bersihin Player sampah bikinan parser commentary lama
+c7c5679  Samain is_active sama skuad terkini di pull_squad
+768a83f  Tambah rotasi cron.log
+550ab00  Perbaiki parser tinggi badan + catat jebakan setup Postgres
+91e8cf7  Integrasi FotMob: statistik pemain terlengkap, PPDA, momentum pembanding
+1c13d63  Simpan koordinat slot formasi dari FotMob
+d58d42f  Ingestion inkremental: jangan tarik ulang laga yang datanya sudah final
+7c166af  Perluas ingestion FotMob ke seluruh Premier League
+c56a70b  Jejak sumber per angka + prioritas provider yang deterministik
+5cade4a  Gabungkan pemain yang muncul di laga & tim yang sama
+85cfca6  Tahap 1: payload mentah, pendeteksi konflik, kesegaran feed
+0b0ea9d  ESPN ikut mencatat ingest + payload mentah
+```
+
+## 16. Backup produksi
+
+Tersimpan di `~/mu-analytics/` di server:
+
+```
+db.sqlite3.bak-*                 sebelum pembersihan & migrasi Postgres
+backup-pg-20260817-113509.dump   sebelum integrasi FotMob
+backup-pg-preliga-*.dump         sebelum backfill liga
+backup-pg-preprov-*.dump         sebelum sistem jejak sumber
+backup-pg-premerge-*.dump        sebelum penggabungan co-occurrence
+```
+
+Rollback ke SQLite kalau perlu: kosongkan `DB_ENGINE`, `touch tmp/restart.txt`.

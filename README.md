@@ -2,6 +2,10 @@
 
 Web app internal buat divisi analisis IndoManUtd Jogja. Detail konteks & scope lengkap ada di [projectbrief.md](projectbrief.md).
 
+Riwayat perubahan besar di lapisan data — beserta keputusan, jebakan, dan
+batas yang sudah teruji — ada di [CATATAN-PERUBAHAN-BESAR.md](CATATAN-PERUBAHAN-BESAR.md).
+Baca itu dulu sebelum menyentuh sistem dedup, provenance, atau ingestion.
+
 Satu server Django — backend (Django REST Framework, buat integrasi lain kalau perlu) dan frontend (Django templates + Tailwind CSS + Chart.js) jalan di port yang sama, nggak ada proses Node terpisah.
 
 ## Struktur repo
