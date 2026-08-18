@@ -7,7 +7,15 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from matches.dedup import resolve_match
-from matches.models import Match, MatchEvent, MatchPlay, MatchTeamStatistics, PlayerMatchStatistics
+from matches.ingest_utils import store_raw
+from matches.models import (
+    Match,
+    MatchEvent,
+    MatchIngest,
+    MatchPlay,
+    MatchTeamStatistics,
+    PlayerMatchStatistics,
+)
 from matches.services import EspnClient, EspnError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
@@ -142,6 +150,8 @@ class Command(BaseCommand):
                     )
                     continue
 
+                store_raw(DataSource.ESPN, 'summary', event_data['id'], summary)
+
                 commentary = summary.get('commentary') or []
                 events_total += self._save_events(
                     match, summary.get('keyEvents') or [], commentary
@@ -149,6 +159,14 @@ class Command(BaseCommand):
                 plays_total += self._save_plays(match, commentary)
                 self._save_statistics(match, summary.get('boxscore') or {})
                 players_total += self._save_rosters(match, summary.get('rosters') or [])
+
+                # Tanpa catatan ini, kartu Kesehatan Sumber bakal terus bilang
+                # ESPN "berhenti" padahal dia justru yang paling sering jalan.
+                MatchIngest.objects.update_or_create(
+                    match=match,
+                    source=DataSource.ESPN,
+                    defaults={'rows': events_total + plays_total + players_total},
+                )
                 processed += 1
 
         self.stdout.write(
