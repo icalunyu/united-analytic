@@ -127,18 +127,30 @@ Server ini (DomaiNesia, `musafar.web.id`) udah pernah dipakai buat deploy app Dj
 
 1. **Setup Python App** (cPanel UI, sekali doang) — bikin app slot baru, domain/subdomain sendiri (misal `api.musafar.web.id`), python 3.11. cPanel bakal generate venv + `.htaccess` otomatis di documentroot subdomain itu.
 2. **Database PostgreSQL** (cPanel UI) — bikin database + user, catat kredensialnya.
-3. **App root**: kode Django di-clone ke folder terpisah dari documentroot (mis. `~/mu-analytics`), lalu `.htaccess` di documentroot di-arahin lewat `PassengerAppRoot` ke situ (cPanel biasanya udah nyiapin ini otomatis pas Setup Python App, tinggal disesuaikan path-nya).
-4. Environment variable (`DJANGO_SECRET_KEY`, `DB_*`, API key provider) diisi lewat cPanel "Setup Python App" UI (tersimpan sebagai `SetEnv` di `.htaccess`) — **bukan** file `.env` di server (`settings.py` baca `os.environ` jadi kompatibel sama cara mana pun).
+3. **App root**: `~/mu-analytics`, dan `.htaccess` di documentroot diarahin ke situ lewat `PassengerAppRoot`.
+
+   Perhatikan bentuknya — **isi folder `backend/` disalin rata ke app root**, jadi di server `manage.py`, `config/`, `matches/`, `dashboard/` ada di `~/mu-analytics/` langsung, tanpa lapisan `backend/`. Path repo `backend/config/settings.py` berarti `~/mu-analytics/config/settings.py` di server.
+4. Environment variable (`DJANGO_SECRET_KEY`, `DB_*`, API key provider) diisi lewat file `.env` di app root (`~/mu-analytics/.env`, mode 600). `settings.py` baca `os.environ` lewat `python-dotenv`, jadi `SetEnv` di `.htaccess` juga jalan kalau lebih disuka.
 5. Deploy sequence (tiap update):
+
+   **Server ini nggak punya git repo** — `~/mu-analytics` bukan working copy, nggak ada `.git`. Deploy dilakukan dengan nyalin file. Jangan pakai `git pull` di sana: dia bakal gagal `fatal: not a git repository`, dan kalau outputnya dipipe (`git pull | tail`) exit code yang kebaca itu punya `tail`, jadi `set -e` pun lolos dan deploy-nya **kelihatan sukses padahal kode nggak berubah**.
+
+   ```bash
+   # dari root repo di lokal — perhatikan backend/ diratakan ke app root
+   rsync -av --delete \
+     --exclude '__pycache__' --exclude 'staticfiles' --exclude '.env' \
+     --exclude 'db.sqlite3' --exclude 'tests.py' \
+     -e 'ssh -p 64000' backend/ musafarw@sanremo.sg.rapidplex.com:~/mu-analytics/
+   ```
+   lalu di server:
    ```bash
    cd ~/mu-analytics
-   git pull origin main
-   source ~/virtualenv/mu-analytics/3.11/bin/activate
-   pip install -r backend/requirements.txt --quiet
-   python backend/manage.py migrate --noinput
-   python backend/manage.py collectstatic --noinput
+   ~/virtualenv/mu-analytics/3.11/bin/pip install -r requirements.txt --quiet
+   ~/virtualenv/mu-analytics/3.11/bin/python manage.py migrate --noinput
+   ~/virtualenv/mu-analytics/3.11/bin/python manage.py collectstatic --noinput
    touch tmp/restart.txt   # trigger restart Passenger — selalu paling akhir
    ```
+   Selalu verifikasi kode yang di server benar-benar berubah (mis. `grep` baris yang baru), jangan percaya "deploy sukses" begitu saja.
 6. **Cron Job** (cPanel) — jadwalkan `pull_fixtures_fd`/`pull_match_events_espn`/dkk berkala (tiap beberapa menit pas matchday, harian di luar itu) supaya data nggak statis dan hemat kuota API.
 
 ## Kredensial

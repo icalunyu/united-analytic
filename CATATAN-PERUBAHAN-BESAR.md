@@ -413,10 +413,25 @@ harian 03:50, simpan 3 arsip `.gz`, rotasi hanya kalau > 1 MB.
 
 ### Deploy
 
-Server **bukan git repo** — deploy dilakukan dengan mengunggah file. Urutan
-`git pull` di README tidak berlaku di sana. Konsekuensinya: tidak ada
-`git status` yang bisa memberi tahu kalau ada penyimpangan; ketahuannya hanya
-lewat pembandingan checksum manual.
+Server **bukan git repo** — deploy dilakukan dengan mengunggah file.
+Konsekuensinya: tidak ada `git status` yang bisa memberi tahu kalau ada
+penyimpangan; ketahuannya hanya lewat pembandingan checksum manual.
+
+Catatan ini sempat ditulis di sini tapi README-nya dibiarkan tetap menyuruh
+`git pull origin main`, dan pada 2026-08-23 jebakannya menggigit persis seperti
+yang diperingatkan. Yang bikin mahal bukan `git pull`-nya gagal, tapi **cara
+gagalnya**: perintahnya dipipe (`git pull origin main 2>&1 | tail -3`), dan
+exit status sebuah pipeline itu milik perintah terakhir — `tail`, yang selalu
+sukses. Jadi `set -e` tidak menggigit, `migrate` dan `collectstatic` di
+belakangnya jalan normal, dan seluruh deploy melaporkan sukses padahal tidak
+satu byte pun kode berubah. Ketahuan cuma karena nilai yang diperiksa sesudahnya
+masih yang lama.
+
+Dua pelajarannya: (1) dokumentasi yang salah lebih berbahaya daripada tidak ada
+dokumentasi — README sekarang sudah diperbaiki dan memuat perintah `rsync` yang
+sebenarnya dipakai; (2) **selalu verifikasi kode di server benar-benar berubah**
+sesudah deploy, jangan percaya laporan sukses. Kalau memipe perintah yang
+kegagalannya penting, pakai `set -o pipefail`.
 
 Layout di server diratakan: `~/mu-analytics/players/`, bukan
 `~/mu-analytics/backend/players/`.

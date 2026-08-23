@@ -183,3 +183,45 @@ class IncrementalIngestTests(TestCase):
     def test_id_nggak_dikenal_atau_ngawur(self):
         for value in (999999, None, 'bukan-angka'):
             self.assertFalse(PullFotMobCommand._already_ingested(value))
+
+
+class CurrentFootballSeasonTests(SimpleTestCase):
+    """Musim Understat harus ikut tanggal, bukan konstanta.
+
+    Regresi bug 4.9: `UNDERSTAT_DEFAULT_SEASON` dipatok '2025'. Begitu musim
+    itu tamat, semua laganya sudah tertarik dan penyaring inkremental melewati
+    semuanya — cron lapor "0 match dicocokkan" dengan exit code 0 tiap malam,
+    dan musim berjalan nggak pernah dapat xG sama sekali.
+    """
+
+    def test_musim_baru_mulai_juli(self):
+        from datetime import date
+
+        from config.settings import _current_football_season
+
+        # 30 Juni masih musim lama, 1 Juli sudah musim baru.
+        self.assertEqual(_current_football_season(date(2026, 6, 30)), 2025)
+        self.assertEqual(_current_football_season(date(2026, 7, 1)), 2026)
+
+    def test_paruh_kedua_musim_pakai_tahun_pembuka(self):
+        from datetime import date
+
+        from config.settings import _current_football_season
+
+        # Januari–Mei 2027 masih musim 2026/27.
+        self.assertEqual(_current_football_season(date(2026, 12, 31)), 2026)
+        self.assertEqual(_current_football_season(date(2027, 1, 5)), 2026)
+        self.assertEqual(_current_football_season(date(2027, 5, 24)), 2026)
+
+    def test_setelan_terbaca_sebagai_musim_berjalan(self):
+        from datetime import date
+
+        from django.conf import settings
+
+        from config.settings import _current_football_season
+
+        # Tanpa override env, nilainya harus musim berjalan — bukan angka mati.
+        self.assertEqual(
+            str(settings.UNDERSTAT_DEFAULT_SEASON),
+            str(_current_football_season(date.today())),
+        )
