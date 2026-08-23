@@ -801,3 +801,163 @@ sukses padahal tidak satu byte pun berubah.
 Ketahuan hanya karena nilai yang diperiksa sesudahnya masih yang lama.
 README sudah diperbaiki dengan perintah `rsync` yang sebenarnya dipakai. Kalau
 memipe perintah yang kegagalannya penting, pakai `set -o pipefail`.
+
+
+---
+
+## 18. Sesi 23 Agustus (lanjutan): Tahap 1.5 — pagar
+
+Sesudah survei menyeluruh, tiga angka ternyata **tayang dan salah**, dua di
+antaranya akibat kerja di sesi yang sama. Ditambah satu tenggat yang tidak bisa
+ditunda.
+
+### 18.1 Rekomendasi saya sendiri bertentangan dengan handoff
+
+Saya sempat merekomendasikan `Hypothesis` dengan **penguncian**: tolak `save()`
+kalau `now > kickoff_at`. Handoff melarangnya dengan kalimat yang tidak bisa
+ditafsir dua arah:
+
+> "Tidak ada mekanisme kunci atau approval. Framing yang sudah disepakati
+> dengan user: 'sampai konten ini diunggah, beginilah prediksi kami' — prediksi
+> terus diperbarui otomatis sampai kick-off, dan tiap konten membawa cap waktu
+> versi yang dipakai. **Jangan menambahkan tombol lock, status 'diperiksa oleh
+> X', atau approval flow; app tidak punya login sehingga klaim itu tidak bisa
+> dibuktikan.**"
+
+Pelajarannya: **baca spesifikasi sebelum merekomendasikan bentuk, bukan
+sesudah.** Rekomendasi itu keluar dari penalaran "prediksi harus bisa
+dibuktikan pra-laga, jadi harus dikunci" — masuk akal, dan salah, karena user
+sudah menegosiasikan jawaban berbeda untuk masalah yang sama.
+
+Bentuk yang benar: **snapshot berversi**. Tiap pembaruan bikin baris baru, dan
+`Match.prediction_before_kickoff()` menyaring `created_at < kickoff_at`.
+Efeknya sama dengan mengunci — versi yang ditulis sesudah peluit tidak bisa
+menyamar jadi prediksi pra-laga — tanpa melanggar aturan dan tanpa mengklaim
+sesuatu yang tidak bisa dilacak app (prinsip desain nomor 3).
+
+Modelnya: `PredictionSnapshot` → `HypothesisItem` (KENA/BELUM/MELESET + bukti
+angka) dan `LineupSlot` (11 posisi, keyakinan, penanda pemain kunci).
+Diisi lewat Django admin; tidak diekspos lewat DRF karena API-nya `AllowAny`.
+
+`created_at` memakai **`auto_now_add`, bukan `auto_now`**. Tiga model lain di
+file yang sama pakai `auto_now` karena memang mau tahu sentuhan terakhir;
+menyalin polanya ke sini akan menulis ulang cap waktu tiap kali baris disimpan,
+membuat prediksi pra-laga bercap sesudah laga dan mengosongkan Cek Prediksi
+tanpa gejala. Ada test regresinya.
+
+### 18.2 Koordinat ESPN: skalanya beda DAN arahnya terbalik
+
+Awalnya terbaca sebagai "303 play memakai skala 0..100". Data membantah
+tafsiran sederhana itu:
+
+| | gol | tembakan tepat | pelanggaran |
+|---|---|---|---|
+| format lama (0..1) | **0.225** | 0.290 | 0.632 |
+| format baru (÷100) | **0.915** | 0.834 | 0.513 |
+
+Di format lama 0 = di garis gawang yang diserang; di format baru justru 100.
+Membagi 100 saja akan membuat **gol dibaca sebagai kejadian paling tidak
+berbahaya di lapangan**. Konversinya `1 - x/100`.
+
+Kenapa lolos sekian lama: `_danger` menjepit hasilnya ke `[0,1]`, jadi nilai
+0..100 tidak pernah error — play biasa cuma diam-diam dapat bahaya minimum dan
+pelanggaran dapat maksimum.
+
+Deteksi **per laga**, bukan per nilai: 0.5 sah di kedua format, tapi satu laga
+tidak pernah mencampur keduanya (dicek ke 419 laga: nol yang campur).
+
+### 18.3 Metrik duplikat yang menyesatkan
+
+Angka "55 kunci nama muncul lebih dari sekali" yang dipakai sebagai alarm
+ternyata sebagian besar **bukan duplikat**. Kuncinya (inisial, nama belakang) —
+cukup untuk mencocokkan 'S. Amrabat' dengan 'Sofyan Amrabat', tapi begitu
+dipakai se-liga ia menyatukan *Aaron* vs *Alfie* Cresswell, *Abdou* vs *Amad*
+vs *Amadou* Diallo, *André* vs *Angel* Gomes.
+
+**Sebuah metrik pemantauan bisa jadi sumber alarm palsu yang menyita perhatian
+dari kerusakan nyata.** Metrik yang benar: berapa pemain yang statistiknya
+terbelah — dan itu sekarang nol.
+
+Dan cek "nol statistik terbelah" yang saya laporkan lebih awal **buta** untuk
+kasus terpenting: `Amad Diallo` (#34, 146 laga) vs `Amad Diallo Traore` (#1481,
+32 laga) — kuncinya membaca `diallo` vs `traore` sebagai dua orang, padahal
+kedua record muncul di 32 laga yang sama persis.
+
+### 18.4 `pull_xg_understat`: empat cacat yang saling menyembunyikan
+
+1. Melahirkan 16 Player duplikat (Understat pakai nama lengkap: 'Ezri Konsa
+   Ngoyo', 'Iyenoma Destiny Udogie').
+2. Nama tersimpan dengan entitas HTML mentah (`Jake O&#039;Brien`) — yang
+   sekaligus menghalangi pencocokan ke record aslinya.
+3. `MatchShot.source` tidak diisi: 1.069 baris kosong, filter per sumber
+   mengembalikan nol.
+4. `_save_shots` menghapus **seluruh** tembakan laga termasuk milik FotMob.
+   Yang menyelamatkan selama ini cuma urutan cron, dan itu bukan jaminan.
+
+Pencocokan barunya lewat himpunan bagian token nama, dengan syarat **tepat satu
+kandidat**: Nottingham Forest punya 'Jair Cunha' DAN 'Jair Paula', jadi nama
+'Jair' saja tidak boleh dipaksa memilih.
+
+**Sengaja tidak digabung** dan butuh mata manusia: 'Yehor Yarmolyuk' vs
+'Yarmoliuk' (beda transliterasi), 'Chimuanya' vs 'Lesley Ugochukwu' (beda nama
+depan), serta 'Toti', 'Jair', 'Sávio' (nama satu kata, bukti terlalu lemah).
+
+### 18.5 Penggabungan tim melahirkan laga ganda
+
+Melebur Team 'Wolves' ke 'Wolverhampton Wanderers' menyisakan **6 pasang Match
+kembar** — tiap pertemuan tersimpan dua kali di bawah dua record tim, dan baru
+terlihat kembar setelah timnya jadi satu. Premier League tercatat **40 laga per
+musim** padahal 38.
+
+Event **wajib** di-dedup sebelum absorb: `MatchEvent` tidak punya unique
+constraint, jadi memindahkan begitu saja menggandakan gol dan kartu. Kembaran
+yang statistiknya kosong pun tetap membawa 15-23 event dari provider lain.
+
+Pelajaran umum: **penggabungan di satu lapisan melahirkan duplikat di lapisan
+di atasnya.** Sesudah menggabung Team, periksa Match. Aturannya sekarang jalan
+otomatis tepat sesudah `_merge_teams`.
+
+### 18.6 Nol-palsu ESPN
+
+Untuk sebagian laga ESPN mengirim blok statistik lengkap yang seluruh isinya
+`'0'`. Karena non-null, angka itu lolos semua penyaring:
+
+| musim | dengan nol-palsu | sebenarnya | laga nol |
+|---|---|---|---|
+| 2021 | 51,8% | 53,8% | 2 |
+| **2022** | **49,4%** | **56,4%** | **8** |
+| 2023 | 49,8% | 52,5% | 3 |
+| 2024 | 52,9% | 54,8% | 2 |
+
+Selisih 7 poin di 2022 cukup untuk mengarang tren "MU ambruk lalu bangkit" yang
+seluruhnya artefak data.
+
+Deteksinya penguasaan bola **dan** total umpan sama-sama nol. Nol tembakan saja
+tidak cukup — itu jarang tapi sah; nol penguasaan sekaligus nol umpan tidak
+mungkin untuk tim yang benar-benar bermain.
+
+### 18.7 Keadaan akhir
+
+| | |
+|---|---|
+| Match | 817 (laga ganda: 0) |
+| MatchPlay | 31.073 (`field_x > 1`: 0) |
+| PlayerMatchStatistics | 27.731 (yatim: 0) |
+| MatchShot | 9.700 (tanpa `source`: 0) |
+| Laga MU punya momentum | 421 / 431 |
+| Laga PL per musim | 38 untuk seluruh 2019–2025 |
+| Skuad MU aktif | 38 |
+| Statistik terbelah | 0 |
+| Test | 114 lolos |
+
+### 18.8 Yang masih menggantung
+
+- **Backup off-server.** 11 dump (32 MB) semuanya di server yang sama dengan
+  Postgres-nya, semuanya manual, tidak ada entri cron. Kalau akun hosting
+  hilang, backfill 8 musim hilang bersamanya dan menariknya ulang butuh ~1.900
+  panggilan ke API ESPN yang tidak resmi. Butuh keputusan soal tujuan salinan.
+- 6 record understat-only yang sengaja dibiarkan (lihat 18.4).
+- Halaman Jadwal masih dibatasi 100 laga tanpa filter musim, jadi sebagian
+  besar hasil backfill belum bisa dijangkau lewat UI.
+- Halaman Statistik masih terblokir: `passes_total` dan field progresif tidak
+  ada di skema, `shots_faced` nol di musim 2025 dan 2026.
