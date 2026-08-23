@@ -431,3 +431,70 @@ class PredictionSnapshotTests(TestCase):
 
         snap = self._snapshot_pada(self.kickoff + timedelta(hours=2))
         self.assertLess(snap.lead_time.total_seconds(), 0)
+
+
+class NormalisasiKoordinatTests(SimpleTestCase):
+    """ESPN mengirim dua format koordinat, dan bedanya bukan cuma skala.
+
+    Format lama: 0..1, dengan 0 = di garis gawang yang diserang.
+    Format baru (musim 2026): 0..100, dengan 100 = di gawang.
+
+    Membagi 100 saja membuat gol dibaca sebagai kejadian paling tidak
+    berbahaya. Dan karena `_danger` menjepit hasilnya ke [0,1], salah format
+    tidak pernah memunculkan error — kurvanya cuma diam-diam salah.
+    """
+
+    @staticmethod
+    def _plays(pasangan):
+        from matches.models import MatchPlay
+
+        return [MatchPlay(play_type=t, field_x=x, field_y=x) for t, x in pasangan]
+
+    def _normalkan(self, plays):
+        from matches.management.commands.pull_match_events_espn import Command
+
+        Command._normalize_positions(plays)
+        return plays
+
+    def test_format_baru_dibalik_bukan_cuma_dibagi(self):
+        plays = self._plays([('goal', 97.5), ('foul', 51.3)])
+        self._normalkan(plays)
+        # Gol di 97.5 artinya nyaris di gawang -> harus jadi mendekati 0.
+        self.assertAlmostEqual(plays[0].field_x, 0.025, places=3)
+        self.assertAlmostEqual(plays[1].field_x, 0.487, places=3)
+
+    def test_gol_format_baru_menghasilkan_bahaya_tinggi(self):
+        """Uji yang sebenarnya: hasil akhirnya masuk akal, bukan cuma angkanya."""
+        from matches.momentum import _danger
+
+        plays = self._plays([('goal', 97.5)])
+        sebelum = _danger(plays[0])
+        self._normalkan(plays)
+        sesudah = _danger(plays[0])
+        self.assertAlmostEqual(sebelum, 0.4, places=2)  # dijepit ke minimum
+        self.assertGreater(sesudah, 0.9, 'gol harus mendekati bahaya maksimum')
+
+    def test_format_lama_tidak_disentuh(self):
+        plays = self._plays([('goal', 0.22), ('foul', 0.63)])
+        self._normalkan(plays)
+        self.assertAlmostEqual(plays[0].field_x, 0.22)
+        self.assertAlmostEqual(plays[1].field_x, 0.63)
+
+    def test_deteksi_per_laga_bukan_per_nilai(self):
+        """Nilai 0..100 yang kebetulan kecil ikut dikonversi karena satu laga
+        tidak pernah mencampur dua format."""
+        plays = self._plays([('shot-on-target', 0.8), ('goal', 96.0)])
+        self._normalkan(plays)
+        # 0.8 dalam laga format baru artinya nyaris di gawang SENDIRI.
+        self.assertAlmostEqual(plays[0].field_x, 0.992, places=3)
+        self.assertAlmostEqual(plays[1].field_x, 0.04, places=3)
+
+    def test_koordinat_kosong_tetap_kosong(self):
+        from matches.models import MatchPlay
+
+        plays = [MatchPlay(play_type='goal', field_x=None, field_y=None),
+                 MatchPlay(play_type='foul', field_x=88.0, field_y=None)]
+        self._normalkan(plays)
+        self.assertIsNone(plays[0].field_x)
+        self.assertIsNone(plays[1].field_y)
+        self.assertAlmostEqual(plays[1].field_x, 0.12, places=3)

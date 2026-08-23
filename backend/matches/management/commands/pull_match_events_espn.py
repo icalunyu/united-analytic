@@ -372,8 +372,52 @@ class Command(BaseCommand):
                 field_y=self._nullable_position(play.get('fieldPositionY')),
             )
 
+        self._normalize_positions(rows.values())
         MatchPlay.objects.bulk_create(rows.values())
         return len(rows)
+
+    @staticmethod
+    def _normalize_positions(plays):
+        """Samakan koordinat ESPN ke satu konvensi: 0..1, dan 0 = di gawang lawan.
+
+        ESPN mengirim DUA format berbeda, dan bedanya bukan cuma skala:
+
+        | | gol | tembakan tepat | pelanggaran |
+        |---|---|---|---|
+        | format lama (0..1)   | 0.225 | 0.290 | 0.632 |
+        | format baru (0..100) | 91.5  | 83.4  | 51.3  |
+
+        Di format lama 0 berarti di garis gawang yang diserang; di format baru
+        justru 100 yang berarti di gawang. Jadi arahnya TERBALIK, bukan sekadar
+        dikali seratus. Membagi 100 saja akan membuat gol dibaca sebagai
+        kejadian paling tidak berbahaya di lapangan.
+
+        Format baru muncul di laga musim 2026 (Juli 2026 ke atas), lama di
+        seluruh laga sebelumnya. Deteksinya per laga, bukan per nilai: nilai
+        0..100 yang kebetulan jatuh di bawah 1 tidak bisa dibedakan sendirian,
+        tapi satu laga tidak pernah mencampur dua format (dicek ke 419 laga di
+        produksi: nol yang campur).
+
+        Kenapa ini berbahaya kalau lolos: `_danger` di momentum.py menjepit
+        hasilnya ke [0,1], jadi nilai 0..100 tidak pernah error — play biasa
+        cuma diam-diam jadi bahaya minimum dan pelanggaran jadi maksimum, dan
+        kurvanya salah tanpa satu pun gejala.
+        """
+        nilai = [
+            v for p in plays for v in (p.field_x, p.field_y) if v is not None
+        ]
+        if not nilai or max(nilai) <= 1:
+            return  # format lama, sudah sesuai konvensi
+
+        for p in plays:
+            if p.field_x is not None:
+                # Dibalik: format baru menaruh gawang yang diserang di 100.
+                p.field_x = 1.0 - (p.field_x / 100.0)
+            if p.field_y is not None:
+                # Cuma diskalakan. Arah sumbu Y belum terbukti ikut terbalik,
+                # dan tidak ada satu pun konsumen field_y hari ini — menebak
+                # arahnya lebih buruk daripada mencatat bahwa itu belum diuji.
+                p.field_y = p.field_y / 100.0
 
     @staticmethod
     def _nullable_position(value):
