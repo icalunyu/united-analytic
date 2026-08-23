@@ -544,11 +544,35 @@ class Command(BaseCommand):
                 'penalty_shots': self._parse_stat_int(stats.get('penaltyKickShots')),
             }
 
+            values = self._buang_nol_palsu(values)
+
             row, _ = MatchTeamStatistics.objects.get_or_create(match=match, team=team)
             updates, sources = resolve_updates(row.field_sources, DataSource.ESPN, values)
             if updates:
                 updates['field_sources'] = sources
                 MatchTeamStatistics.objects.filter(pk=row.pk).update(**updates)
+
+    @staticmethod
+    def _buang_nol_palsu(values):
+        """Ubah blok statistik kosong jadi None, bukan nol.
+
+        Untuk sebagian laga ESPN mengirim struktur `statistics` yang lengkap
+        tapi semua isinya '0'. Itu artinya "kami tidak punya datanya", bukan
+        "timnya benar-benar mencatat nol". Karena nilainya non-null, angka itu
+        lolos semua penyaring dan ikut masuk rata-rata.
+
+        Akibatnya di produksi: rata-rata penguasaan bola MU musim 2022 terbaca
+        **49,4%** padahal sebenarnya **56,4%** — selisih 7 poin dari 8 laga,
+        cukup untuk mengarang cerita "MU ambruk lalu bangkit" yang seluruhnya
+        artefak data.
+
+        Deteksinya penguasaan bola DAN total umpan yang dua-duanya nol. Tim
+        yang benar-benar bermain bisa saja nol tembakan — itu jarang tapi sah —
+        tapi tidak mungkin nol penguasaan bola sekaligus nol umpan.
+        """
+        if values.get('possession_pct') in (0, None) and values.get('passes_total') in (0, None):
+            return {k: None for k in values}
+        return values
 
     # Nama stat ESPN -> nama field PlayerMatchStatistics.
     _PLAYER_STAT_FIELDS = {

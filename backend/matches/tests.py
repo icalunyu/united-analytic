@@ -626,3 +626,40 @@ class UnderstatShotSourceTests(TestCase):
         }]})
         shot = MatchShot.objects.get(match=self.match, external_id='99')
         self.assertEqual(shot.source, DataSource.UNDERSTAT)
+
+
+class NolPalsuStatistikTimTests(SimpleTestCase):
+    """ESPN mengirim blok statistik penuh berisi '0' saat datanya tidak ada.
+
+    Karena non-null, angka itu lolos semua penyaring dan ikut rata-rata:
+    penguasaan bola MU musim 2022 terbaca 49,4% padahal 56,4% — selisih 7 poin
+    dari 8 laga, cukup untuk mengarang tren yang tidak pernah terjadi.
+    """
+
+    @staticmethod
+    def _buang(values):
+        from matches.management.commands.pull_match_events_espn import Command
+
+        return Command._buang_nol_palsu(values)
+
+    def test_blok_nol_seluruhnya_jadi_none(self):
+        hasil = self._buang({'possession_pct': 0, 'passes_total': 0, 'shots_total': 0,
+                             'corners': 0, 'fouls': 0})
+        self.assertTrue(all(v is None for v in hasil.values()))
+
+    def test_nol_tembakan_yang_SAH_tidak_ikut_dibuang(self):
+        """Tim bisa benar-benar nol tembakan. Yang mustahil itu nol penguasaan
+        bola sekaligus nol umpan."""
+        hasil = self._buang({'possession_pct': 38, 'passes_total': 290, 'shots_total': 0,
+                             'corners': 0, 'fouls': 12})
+        self.assertEqual(hasil['possession_pct'], 38)
+        self.assertEqual(hasil['shots_total'], 0)
+        self.assertEqual(hasil['corners'], 0)
+
+    def test_laga_normal_lewat_apa_adanya(self):
+        asli = {'possession_pct': 57, 'passes_total': 512, 'shots_total': 14}
+        self.assertEqual(self._buang(dict(asli)), asli)
+
+    def test_none_diperlakukan_sama_dengan_nol(self):
+        hasil = self._buang({'possession_pct': None, 'passes_total': 0, 'shots_total': 3})
+        self.assertIsNone(hasil['shots_total'])
