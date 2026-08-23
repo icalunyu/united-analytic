@@ -4,7 +4,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from matches.dedup import resolve_match
-from matches.models import Match, MatchEvent
+from matches.models import Match, MatchEvent, MatchIngest
 from matches.services import PremierLeagueClient, PremierLeagueError
 from players.dedup import resolve_player, resolve_team
 from players.models import DataSource, PlayerExternalRef, TeamExternalRef
@@ -72,7 +72,20 @@ class Command(BaseCommand):
                     )
                     continue
 
-                events_total += self._save_events(match, detail.get('events') or [])
+                saved = self._save_events(match, detail.get('events') or [])
+                events_total += saved
+
+                # Tanpa catatan ini, kartu Kesehatan Sumber bilang Premier
+                # League "berhenti" SELAMANYA — padahal command ini jalan tiap
+                # malam. source_health.py masukin PREMIER_LEAGUE ke daftar yang
+                # dilacak dengan ambang (26, 72) jam, dan ambang itu dibaca
+                # dari MatchIngest. Nol baris = umur tak hingga = alarm palsu
+                # buat feed yang sebenarnya sehat.
+                MatchIngest.objects.update_or_create(
+                    match=match,
+                    source=DataSource.PREMIER_LEAGUE,
+                    defaults={'rows': saved},
+                )
                 processed += 1
 
         self.stdout.write(

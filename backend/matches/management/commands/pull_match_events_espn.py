@@ -11,6 +11,7 @@ from matches.ingest_utils import store_raw
 from matches.models import (
     Match,
     MatchEvent,
+    MatchExternalRef,
     MatchIngest,
     MatchPlay,
     MatchTeamStatistics,
@@ -21,6 +22,15 @@ from players.dedup import resolve_player, resolve_team
 from players.models import DataSource
 from players.name_utils import team_names_match
 from players.provenance import resolve_updates
+
+# Status yang artinya "skornya nggak akan berubah lagi". Laga di salah satu
+# status ini aman dilewati kalau datanya udah pernah ditarik.
+#
+# PST/CANC sengaja NGGAK masuk: laga tertunda bisa dijadwalkan ulang dan
+# statusnya balik ke NS, jadi dia harus tetep dicek tiap run.
+FINAL_STATUSES = frozenset(
+    {Match.Status.FINISHED, Match.Status.EXTRA_TIME, Match.Status.PENALTIES}
+)
 
 
 def _stable_id(name):
@@ -79,6 +89,14 @@ class Command(BaseCommand):
             default=None,
             help='Cuma 1 kompetisi (mis. eng.fa). Default: semua slug di ESPN_COMPETITION_SLUGS.',
         )
+        parser.add_argument(
+            '--refresh',
+            action='store_true',
+            help=(
+                'Tarik ulang laga yang udah selesai DAN udah pernah ditarik '
+                '(default: dilewati). Wajib buat backfill musim lama.'
+            ),
+        )
 
     def handle(self, *args, **options):
         team_id = options['team_id'] or settings.ESPN_MU_TEAM_ID
@@ -97,6 +115,7 @@ class Command(BaseCommand):
         )
 
         processed = 0
+        already = 0
         events_total = 0
         plays_total = 0
         players_total = 0
@@ -130,6 +149,18 @@ class Command(BaseCommand):
                     continue
                 seen_ids.add(event_data['id'])
                 fixtures_total += 1
+
+                # Penyaring inkremental. Command ini jalan 84x/hari dan dulu
+                # narik ulang SEMUA laga selesai tiap kali — ~1.900 panggilan
+                # ke API yang nggak resmi, plus nimpa RawPayload yang isinya
+                # sama persis.
+                #
+                # Ditaruh di SINI, sebelum _save_match dan sebelum get_summary,
+                # karena laga yang udah final skornya nggak akan berubah lagi —
+                # nggak ada gunanya nulis ulang row-nya pun.
+                if not options['refresh'] and self._already_final(event_data['id']):
+                    already += 1
+                    continue
 
                 try:
                     match, _ = self._save_match(event_data, mu_team_id=team_id, league_slug=slug)
@@ -169,6 +200,12 @@ class Command(BaseCommand):
                 )
                 processed += 1
 
+        if already:
+            self.stdout.write(
+                f'{already} laga dilewati (sudah selesai & pernah ditarik, '
+                f'pakai --refresh buat paksa).'
+            )
+
         self.stdout.write(
             self.style.SUCCESS(
                 f'Selesai. {fixtures_total} fixture unik dari {len(slugs)} kompetisi, '
@@ -176,6 +213,44 @@ class Command(BaseCommand):
                 f'{plays_total} play, {players_total} statistik pemain disimpan.'
             )
         )
+
+    @staticmethod
+    def _already_final(espn_id):
+        """True kalau laga ini udah final DI DATABASE dan datanya udah ditarik.
+
+        Dua syarat, dan dua-duanya perlu:
+
+        1. **Status di DB udah final.** Dibaca dari row yang tersimpan, BUKAN
+           dari payload ESPN yang baru datang — dan itu disengaja. Laga yang
+           ditarik waktu masih jalan (`state == 'in'`) tetep dapet baris
+           MatchIngest, jadi kalau syaratnya cuma "pernah ditarik", laga itu
+           bakal dilewati selamanya dan datanya beku di potret menit-60.
+           Dengan membaca status LAMA: run berikutnya lihat status masih LIVE,
+           nggak dilewati, `_save_match` naikin ke FT, summary final ketarik,
+           baru run sesudahnya dilewati.
+
+        2. **Ada MatchIngest.** Laga lama yang fixture-nya masuk dari provider
+           lain (football-data, Highlightly) statusnya udah FT tapi ESPN belum
+           pernah nyentuh — itu justru yang harus ditarik.
+        """
+        try:
+            external_id = int(espn_id)
+        except (TypeError, ValueError):
+            return False
+
+        ref = (
+            MatchExternalRef.objects.filter(
+                source=DataSource.ESPN, external_id=external_id
+            )
+            .select_related('match')
+            .first()
+        )
+        if ref is None or ref.match.status not in FINAL_STATUSES:
+            return False
+
+        return MatchIngest.objects.filter(
+            match=ref.match, source=DataSource.ESPN
+        ).exists()
 
     def _save_match(self, event_data, mu_team_id, league_slug=''):
         comp = event_data['competitions'][0]

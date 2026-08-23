@@ -663,3 +663,82 @@ class NolPalsuStatistikTimTests(SimpleTestCase):
     def test_none_diperlakukan_sama_dengan_nol(self):
         hasil = self._buang({'possession_pct': None, 'passes_total': 0, 'shots_total': 3})
         self.assertIsNone(hasil['shots_total'])
+
+
+class EspnPenyaringInkrementalTests(TestCase):
+    """Penyaring 'sudah selesai & pernah ditarik' di pull_match_events_espn.
+
+    Command ini jalan 84x/hari dan dulu narik ulang SEMUA laga selesai tiap
+    kali — ~1.900 panggilan ke API yang nggak resmi, plus nimpa RawPayload
+    yang isinya sama persis.
+
+    Test paling penting di kelas ini `test_laga_live_yang_udah_ditarik_tetep_ditarik_lagi`.
+    Kalau penyaringnya cuma ngecek "pernah ditarik" tanpa ngecek status, laga
+    yang ditarik waktu masih jalan bakal dilewati SELAMANYA dan datanya beku
+    di potret menit-60 — salah, dan diam.
+    """
+
+    def setUp(self):
+        from matches.management.commands.pull_match_events_espn import Command
+
+        self.Command = Command
+        home = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        away = Team.objects.create(name='Ipswich Town')
+        self.match = Match.objects.create(
+            home_team=home,
+            away_team=away,
+            kickoff_at=timezone.now(),
+            status=Match.Status.FINISHED,
+        )
+        MatchExternalRef.objects.create(
+            match=self.match, source=DataSource.ESPN, external_id=740855
+        )
+
+    def _catat_ingest(self):
+        MatchIngest.objects.create(match=self.match, source=DataSource.ESPN, rows=100)
+
+    def test_selesai_dan_udah_ditarik_dilewati(self):
+        self._catat_ingest()
+        self.assertTrue(self.Command._already_final(740855))
+
+    def test_selesai_tapi_belum_pernah_ditarik_tetep_ditarik(self):
+        """Laga lama yang fixture-nya masuk dari provider lain: status udah FT
+        tapi ESPN belum pernah nyentuh. Justru ini yang harus ditarik."""
+        self.assertFalse(self.Command._already_final(740855))
+
+    def test_laga_live_yang_udah_ditarik_tetep_ditarik_lagi(self):
+        """Ini pagar terhadap pembekuan data.
+
+        Laga yang ditarik waktu masih jalan tetep dapet baris MatchIngest.
+        Kalau penyaringnya nggak ngecek status, laga itu dilewati selamanya.
+        """
+        self._catat_ingest()
+        for status in (Match.Status.LIVE, Match.Status.HALFTIME, Match.Status.NOT_STARTED):
+            Match.objects.filter(pk=self.match.pk).update(status=status)
+            self.assertFalse(
+                self.Command._already_final(740855),
+                f'laga berstatus {status} nggak boleh dilewati',
+            )
+
+    def test_tertunda_dan_batal_nggak_dianggap_final(self):
+        """Laga tertunda bisa dijadwalkan ulang dan statusnya balik ke NS,
+        jadi dia harus tetep dicek tiap run."""
+        self._catat_ingest()
+        for status in (Match.Status.POSTPONED, Match.Status.CANCELLED):
+            Match.objects.filter(pk=self.match.pk).update(status=status)
+            self.assertFalse(self.Command._already_final(740855))
+
+    def test_perpanjangan_dan_adu_penalti_dianggap_final(self):
+        self._catat_ingest()
+        for status in (Match.Status.EXTRA_TIME, Match.Status.PENALTIES):
+            Match.objects.filter(pk=self.match.pk).update(status=status)
+            self.assertTrue(self.Command._already_final(740855))
+
+    def test_catatan_sumber_lain_nggak_ngaruh(self):
+        MatchIngest.objects.create(match=self.match, source=DataSource.FOTMOB, rows=50)
+        self.assertFalse(self.Command._already_final(740855))
+
+    def test_id_nggak_dikenal_atau_ngawur(self):
+        self._catat_ingest()
+        for value in (999999, None, 'bukan-angka', ''):
+            self.assertFalse(self.Command._already_final(value))

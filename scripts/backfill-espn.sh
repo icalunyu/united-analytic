@@ -28,8 +28,11 @@ cd "$APP_ROOT"
 
 for S in $SEASONS; do
     echo "=================== MUSIM $S ==================="
-    "$PYTHON" manage.py pull_match_events_espn --season "$S" 2>&1 \
-        | grep -E "fixture|Selesai|gagal"
+    # --refresh WAJIB di sini. Sejak penyaring inkremental dipasang,
+    # pull_match_events_espn melewati laga yang udah selesai & pernah ditarik —
+    # tanpa flag ini skrip backfill exit 0 sambil nggak ngerjain apa-apa.
+    "$PYTHON" manage.py pull_match_events_espn --season "$S" --refresh 2>&1 \
+        | grep -E "fixture|Selesai|gagal|dilewati"
     sleep "$JEDA"
 done
 
