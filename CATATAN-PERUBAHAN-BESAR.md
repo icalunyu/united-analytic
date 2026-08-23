@@ -952,10 +952,25 @@ mungkin untuk tim yang benar-benar bermain.
 
 ### 18.8 Yang masih menggantung
 
-- **Backup off-server.** 11 dump (32 MB) semuanya di server yang sama dengan
-  Postgres-nya, semuanya manual, tidak ada entri cron. Kalau akun hosting
-  hilang, backfill 8 musim hilang bersamanya dan menariknya ulang butuh ~1.900
-  panggilan ke API ESPN yang tidak resmi. Butuh keputusan soal tujuan salinan.
+- **Backup off-server — separuh jalan.** `scripts/backup-db.sh` sudah jadi dan
+  terpasang di cron (03:30 WIB), `rclone v1.75.0` terpasang di `~/bin/rclone`
+  (checksum diverifikasi terhadap SHA256SUMS resmi). Dump harian jalan dan
+  berotasi (3 lokal). **Yang belum: OAuth Google Drive**, dan itu memang harus
+  dikerjakan pemilik akun — token tidak boleh lewat chat atau ditulis agen.
+  Sampai itu beres, salinannya masih di server yang sama dengan Postgres-nya.
+
+  Tiga jebakan yang ditemui waktu menulis skrip ini, semuanya khas host ini:
+  1. **`eval` untuk membaca `.env` itu berbahaya.** Password produksi
+     mengandung karakter khusus; `eval` menafsirkan potongannya sebagai nama
+     variabel, skrip mati dengan `unbound variable`, dan potongan password itu
+     **ikut tercetak ke log**. Sekarang dipakai `printf -v`, yang menugaskan
+     nilai tanpa pernah menafsirkannya sebagai kode.
+  2. **Tidak ada `/dev/fd`.** Process substitution (`< <(grep ...)`) mati
+     dengan `No such file or directory`. `.env` dibaca langsung `< .env` dan
+     disaring `case` di dalam loop.
+  3. **Rotasi lokal harus mendahului urusan remote.** Versi pertama merotasi di
+     akhir, jadi selama Drive belum tersambung skrip berhenti duluan dan dump
+     16 MB/hari menumpuk diam-diam sampai kuota habis.
 - 6 record understat-only yang sengaja dibiarkan (lihat 18.4).
 - **10 laga MU tanpa play-by-play (421/431).** Sempat dikira backfill yang
   terpotong — koneksi SSH memang putus di tengah (`broken pipe`, exit 255) —
