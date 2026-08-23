@@ -272,6 +272,16 @@ class PlayerMatchStatistics(models.Model):
     rating = models.FloatField(null=True, blank=True)
     touches = models.PositiveSmallIntegerField(null=True, blank=True)
     touches_opp_box = models.PositiveSmallIntegerField(null=True, blank=True)
+    # FotMob ngirim umpan pemain sebagai PECAHAN dalam satu kunci:
+    #   {"key": "accurate_passes", "stat": {"type": "fractionWithPercentage",
+    #                                       "total": 78, "value": 72}}
+    # `value` itu umpan akurat, `total` umpan yang dicoba. Parser lama cuma
+    # baca `value`, jadi penyebutnya kebuang dan Umpan% per pemain nggak bisa
+    # dihitung sama sekali — padahal angkanya ada di payload dari awal.
+    #
+    # NB: level TIM formatnya beda ('321 (84%)' plus kunci `passes` terpisah),
+    # jadi jangan samain parsernya.
+    passes_total = models.PositiveSmallIntegerField(null=True, blank=True)
     passes_accurate = models.PositiveSmallIntegerField(null=True, blank=True)
     passes_into_final_third = models.PositiveSmallIntegerField(null=True, blank=True)
     long_balls_accurate = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -312,6 +322,41 @@ class PlayerMatchStatistics(models.Model):
                 fields=['match', 'player'], name='unique_player_match_statistics'
             )
         ]
+
+    # ------------------------------------------------------------ turunan
+
+    @staticmethod
+    def _ratio(bagian, total):
+        if not total or bagian is None:
+            return None
+        return round(bagian / total * 100, 1)
+
+    @property
+    def pass_pct(self):
+        return self._ratio(self.passes_accurate, self.passes_total)
+
+    @property
+    def save_pct(self):
+        """Persentase penyelamatan kiper.
+
+        Penyebutnya `saves + goals_conceded`, BUKAN `shots_faced`. Ini bukan
+        selera — `shots_faced` dari ESPN artinya SELURUH tembakan ke arah
+        gawang termasuk yang melenceng, jadi dia penyebut yang salah: dari 500
+        baris berkoordinat, **492 punya shots_faced != saves + kebobolan**.
+        Contoh nyata: Onana shots_faced=7, saves=2, kebobolan=3 — kalau dibagi
+        7 hasilnya 29%, padahal dari tembakan yang benar-benar mengarah ke
+        gawang dia menyelamatkan 2 dari 5 alias 40%.
+
+        Lagipula ESPN berhenti mengirim angka itu: seluruh baris musim 2025
+        dan 2026 bernilai 0.
+
+        None kalau penyebutnya 0 — kiper cadangan yang nggak main bukan berarti
+        punya Sv% 0% (atau 100%). Di produksi ada 545 baris begitu.
+        """
+        total = (self.saves or 0) + (self.goals_conceded or 0)
+        if not total or self.saves is None:
+            return None
+        return round(self.saves / total * 100, 1)
 
     def __str__(self):
         return f'{self.player.name} - {self.match}'

@@ -1233,3 +1233,100 @@ class KandidatHipotesisTests(TestCase):
         for k in self._kandidat():
             self.assertIn('Cek:', k['evidence_note'], k['text'])
             self.assertIn('Dasar:', k['evidence_note'], k['text'])
+
+
+class SvPersenDanUmpanPersenTests(TestCase):
+    """Dua kolom halaman Statistik yang dikira mustahil, ternyata bisa.
+
+    Sv%: `shots_faced` BUKAN penyebut yang benar. Artinya di ESPN adalah
+    SELURUH tembakan ke arah gawang termasuk yang melenceng — dari 500 baris
+    produksi, 492 punya shots_faced != saves + kebobolan. Dan ESPN berhenti
+    mengirimnya sejak musim 2025 (semua nol).
+
+    Umpan%: penyebutnya ADA di payload FotMob sebagai `total` di samping
+    `value`, cuma tidak pernah dibaca parser.
+    """
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.match = Match.objects.create(
+            home_team=self.mu,
+            away_team=Team.objects.create(name='Ipswich'),
+            kickoff_at=timezone.now(),
+        )
+
+    def _baris(self, **kw):
+        from matches.models import PlayerMatchStatistics
+        from players.models import Player
+
+        return PlayerMatchStatistics.objects.create(
+            match=self.match,
+            player=Player.objects.create(name=f'P{Player.objects.count()}'),
+            team=self.mu,
+            **kw,
+        )
+
+    def test_sv_persen_dari_saves_dan_kebobolan(self):
+        self.assertEqual(self._baris(saves=2, goals_conceded=2).save_pct, 50.0)
+        self.assertEqual(self._baris(saves=5, goals_conceded=4).save_pct, 55.6)
+        self.assertEqual(self._baris(saves=3, goals_conceded=0).save_pct, 100.0)
+
+    def test_kiper_yang_nggak_main_dapat_None_bukan_nol(self):
+        """Di produksi ada 545 baris saves=0 & kebobolan=0 tanpa menit main.
+        Kiper cadangan bukan berarti Sv%-nya 0% atau 100%."""
+        self.assertIsNone(self._baris(saves=0, goals_conceded=0).save_pct)
+        self.assertIsNone(self._baris().save_pct)
+
+    def test_shots_faced_TIDAK_dipakai_buat_sv_persen(self):
+        """Onana asli: shots_faced=7, saves=2, kebobolan=3. Kalau dibagi 7
+        hasilnya 29%; yang benar 2 dari 5 = 40%."""
+        baris = self._baris(shots_faced=7, saves=2, goals_conceded=3)
+        self.assertEqual(baris.save_pct, 40.0)
+
+    def test_umpan_persen_butuh_penyebut(self):
+        self.assertEqual(self._baris(passes_accurate=72, passes_total=78).pass_pct, 92.3)
+        self.assertIsNone(self._baris(passes_accurate=72).pass_pct)
+        self.assertIsNone(self._baris(passes_accurate=72, passes_total=0).pass_pct)
+
+    def test_parser_fotmob_ambil_value_dan_total(self):
+        from matches.management.commands.pull_fotmob import (
+            PLAYER_TOTAL_FIELDS,
+            Command,
+        )
+
+        self.assertEqual(PLAYER_TOTAL_FIELDS['accurate_passes'], 'passes_total')
+        # Bentuk asli dari payload produksi (Maguire 72 dari 78).
+        stat = {'type': 'fractionWithPercentage', 'total': 78, 'value': 72}
+        self.assertEqual(Command._coerce(stat.get('value'), 'passes_accurate'), 72)
+        self.assertEqual(Command._coerce(stat.get('total'), 'passes_total'), 78)
+
+    def test_penjaga_nol_palsu_pemain(self):
+        from matches.management.commands.pull_match_events_espn import Command
+
+        # Mustahil: nol tembakan dihadapi tapi kebobolan.
+        hasil = Command._buang_nol_palsu_pemain(
+            {'shots_faced': 0, 'goals_conceded': 1, 'saves': 0}
+        )
+        self.assertIsNone(hasil['shots_faced'])
+        self.assertEqual(hasil['goals_conceded'], 1, 'field lain jangan ikut dibuang')
+
+        # Mustahil juga: nol tembakan dihadapi tapi bikin penyelamatan.
+        self.assertIsNone(
+            Command._buang_nol_palsu_pemain(
+                {'shots_faced': 0, 'goals_conceded': 0, 'saves': 3}
+            )['shots_faced']
+        )
+
+        # Pemain lapangan yang memang nol semua: biarkan.
+        utuh = Command._buang_nol_palsu_pemain(
+            {'shots_faced': 0, 'goals_conceded': 0, 'saves': 0}
+        )
+        self.assertEqual(utuh['shots_faced'], 0)
+
+        # Angka sah tetap tersimpan.
+        self.assertEqual(
+            Command._buang_nol_palsu_pemain(
+                {'shots_faced': 9, 'goals_conceded': 1, 'saves': 4}
+            )['shots_faced'],
+            9,
+        )

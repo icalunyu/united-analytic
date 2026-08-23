@@ -37,6 +37,16 @@ REQUEST_DELAY_SECONDS = 0.8
 
 # key FotMob -> field PlayerMatchStatistics. Sengaja pakai `key` (snake_case
 # yang stabil), bukan `title` yang teks tampilan dan bisa berubah/dilokalkan.
+# Kunci FotMob yang menghasilkan DUA field kita sekaligus: `value` jadi angka
+# akuratnya, `total` jadi penyebutnya. Bentuk aslinya:
+#   {"key": "accurate_passes",
+#    "stat": {"type": "fractionWithPercentage", "total": 78, "value": 72}}
+# Parser lama cuma baca `value`, jadi penyebutnya kebuang dan Umpan% per pemain
+# nggak pernah bisa dihitung — padahal angkanya ada di payload dari awal.
+PLAYER_TOTAL_FIELDS = {
+    'accurate_passes': 'passes_total',
+}
+
 PLAYER_STAT_FIELDS = {
     'rating_title': 'rating',
     'minutes_played': 'minutes_played',
@@ -311,10 +321,18 @@ class Command(BaseCommand):
             for group in entry.get('stats') or []:
                 for raw in (group.get('stats') or {}).values():
                     key = (raw or {}).get('key')
+                    stat = raw.get('stat') or {}
+
+                    total_field = PLAYER_TOTAL_FIELDS.get(key)
+                    if total_field:
+                        total = self._coerce(stat.get('total'), total_field)
+                        if total is not None:
+                            values[total_field] = total
+
                     field = PLAYER_STAT_FIELDS.get(key)
                     if not field:
                         continue
-                    value = self._coerce(((raw.get('stat') or {}).get('value')), field)
+                    value = self._coerce(stat.get('value'), field)
                     if value is not None:
                         values[field] = value
 
@@ -498,7 +516,10 @@ class Command(BaseCommand):
         if value is None:
             return None
         if isinstance(value, dict):
-            value = value.get('total')
+            # Dulu dict di-fallback ke 'total'. Sekarang pemanggilnya eksplisit
+            # milih 'value' atau 'total' sendiri, jadi dict yang nyampe sini
+            # artinya ada bentuk payload yang belum dikenali — jangan nebak.
+            value = value.get('value', value.get('total'))
             if value is None:
                 return None
         text = str(value).strip()

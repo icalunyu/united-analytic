@@ -649,6 +649,28 @@ class Command(BaseCommand):
             return {k: None for k in values}
         return values
 
+    @staticmethod
+    def _buang_nol_palsu_pemain(values):
+        """Versi per-pemain dari `_buang_nol_palsu`.
+
+        ESPN berhenti ngirim `shotsFaced` mulai musim 2025 — kuncinya masih ada
+        tapi isinya '0' buat SEMUA baris kiper. Karena '0' itu non-null, dia
+        lolos tiap penyaring dan bikin kolom "terisi" padahal kosong: 760 dari
+        850 baris musim 2025 begitu.
+
+        Deteksinya kontradiksi fisik: mustahil menghadapi nol tembakan tapi
+        kebobolan, atau menghadapi nol tembakan tapi bikin penyelamatan.
+
+        Cuma `shots_faced` yang dibuang, bukan seluruh baris — pemain lapangan
+        memang sah bernilai 0 di hampir semua kolom kiper.
+        """
+        if values.get('shots_faced') == 0 and (
+            (values.get('goals_conceded') or 0) > 0 or (values.get('saves') or 0) > 0
+        ):
+            values = dict(values)
+            values['shots_faced'] = None
+        return values
+
     # Nama stat ESPN -> nama field PlayerMatchStatistics.
     _PLAYER_STAT_FIELDS = {
         'totalGoals': 'goals',
@@ -704,6 +726,7 @@ class Command(BaseCommand):
                     field: self._parse_stat_int(stats.get(espn_name))
                     for espn_name, field in self._PLAYER_STAT_FIELDS.items()
                 }
+                defaults = self._buang_nol_palsu_pemain(defaults)
                 defaults.update(
                     {
                         'team': team,
