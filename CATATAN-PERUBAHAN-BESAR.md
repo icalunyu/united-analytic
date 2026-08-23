@@ -957,6 +957,22 @@ mungkin untuk tim yang benar-benar bermain.
   hilang, backfill 8 musim hilang bersamanya dan menariknya ulang butuh ~1.900
   panggilan ke API ESPN yang tidak resmi. Butuh keputusan soal tujuan salinan.
 - 6 record understat-only yang sengaja dibiarkan (lihat 18.4).
+- **10 laga MU tanpa play-by-play (421/431).** Sempat dikira backfill yang
+  terpotong — koneksi SSH memang putus di tengah (`broken pipe`, exit 255) —
+  tapi penarikan ulang menghasilkan celah yang **identik**, jadi ini batas
+  sumber, bukan kegagalan kita. Tiga sebab berbeda:
+  1. **4 laga tanpa ref ESPN sama sekali** (Dortmund 2023, Copenhagen ×2,
+     Plzen) — laga cup Eropa. Endpoint jadwal ESPN mengembalikan 0 fixture
+     untuk `uefa.champions` di musim-musim lama, jadi ESPN tidak pernah
+     menyentuhnya. Isinya kosong total, cuma skor dari Highlightly.
+  2. **5 laga punya ref dan ingest ESPN** tapi bagian `commentary`-nya memang
+     kosong di sisi ESPN — kebanyakan laga persahabatan pramusim.
+  3. **1 laga sehat kecuali komentarnya** (West Ham 10 Feb 2026: 12 event,
+     41 statistik, 5 sumber).
+
+  Pelajaran operasional: perintah panjang di server **wajib** `nohup` dan
+  ditaruh di `~/mu-analytics/scripts/` — `/tmp` di host ini di-mount `noexec`,
+  jadi skrip di sana gagal dengan `Permission denied` yang menyesatkan.
 - Halaman Jadwal masih dibatasi 100 laga tanpa filter musim, jadi sebagian
   besar hasil backfill belum bisa dijangkau lewat UI.
 - Halaman Statistik masih terblokir: `passes_total` dan field progresif tidak
