@@ -1078,3 +1078,72 @@ class SnapshotPropertyTests(TestCase):
 
     def test_prediction_before_kickoff_menemukan_snapshot(self):
         self.assertEqual(self.match.prediction_before_kickoff(), self.snapshot)
+
+
+class PruneRawPayloadTests(TestCase):
+    """`prune_raw_payloads` — konservatif, dan default-nya nggak menghapus."""
+
+    def setUp(self):
+        from matches.models import RawPayload
+
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        lawan = Team.objects.create(name='Ipswich')
+        self.match_baru = Match.objects.create(
+            home_team=self.mu, away_team=lawan, kickoff_at=timezone.now(), season=2026
+        )
+        self.match_lama = Match.objects.create(
+            home_team=self.mu, away_team=lawan, kickoff_at=timezone.now(), season=2019
+        )
+        for m, ext in ((self.match_baru, 111), (self.match_lama, 222)):
+            MatchExternalRef.objects.create(
+                match=m, source=DataSource.ESPN, external_id=ext
+            )
+            RawPayload.objects.create(
+                source=DataSource.ESPN, kind='summary', key=str(ext),
+                payload={'x': 1}, size_bytes=1000,
+            )
+        # Payload yatim: key-nya nggak nunjuk ke Match mana pun.
+        RawPayload.objects.create(
+            source=DataSource.ESPN, kind='summary', key='999999',
+            payload={'x': 1}, size_bytes=1000,
+        )
+
+    @staticmethod
+    def _jalankan(*args):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command('prune_raw_payloads', *args, stdout=out)
+        return out.getvalue()
+
+    def test_dry_run_nggak_menghapus_apa_pun(self):
+        from matches.models import RawPayload
+
+        keluaran = self._jalankan()
+        self.assertIn('DRY RUN', keluaran)
+        self.assertEqual(RawPayload.objects.count(), 3)
+
+    def test_yatim_terdeteksi(self):
+        self.assertIn('Yatim (key nggak nyambung ke Match): 1', self._jalankan())
+
+    def test_musim_dipertahankan_kalau_jumlahnya_di_bawah_ambang(self):
+        """Cuma ada 2 musim di DB dan ambangnya 3 — nggak ada yang lama."""
+        keluaran = self._jalankan()
+        self.assertIn('Musim lama: nggak ada', keluaran)
+
+    def test_apply_menghapus_yatim_tapi_menyisakan_yang_kepakai(self):
+        from matches.models import RawPayload
+
+        self._jalankan('--apply')
+        sisa = set(RawPayload.objects.values_list('key', flat=True))
+        self.assertEqual(sisa, {'111', '222'}, 'payload laga yang ada harus selamat')
+
+    def test_keep_seasons_membuang_musim_di_luar_jendela(self):
+        from matches.models import RawPayload
+
+        # Dengan ambang 1, cuma musim 2026 yang dipertahankan.
+        self._jalankan('--apply', '--keep-seasons', '1')
+        sisa = set(RawPayload.objects.values_list('key', flat=True))
+        self.assertEqual(sisa, {'111'})
