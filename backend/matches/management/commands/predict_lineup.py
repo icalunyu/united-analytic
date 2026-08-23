@@ -8,8 +8,13 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 from django.utils import timezone
 
-from matches.lineup_prediction import DEFAULT_WINDOW, build_note, predict_xi
-from matches.models import LineupSlot, Match, PredictionSnapshot
+from matches.lineup_prediction import (
+    DEFAULT_WINDOW,
+    build_note,
+    predict_xi,
+    suggest_hypotheses,
+)
+from matches.models import HypothesisItem, LineupSlot, Match, PredictionSnapshot
 from players.models import Team
 
 
@@ -48,7 +53,9 @@ class Command(BaseCommand):
             )
 
         prediksi = predict_xi(team, match.kickoff_at, options['window'])
+        kandidat = suggest_hypotheses(team, match.kickoff_at, options['window'])
         self._cetak(match, prediksi)
+        self._cetak_hipotesis(kandidat)
 
         if not prediksi['slots']:
             raise CommandError('Nggak ada susunan yang bisa dipakai. Nggak nulis apa-apa.')
@@ -67,7 +74,7 @@ class Command(BaseCommand):
             )
             return
 
-        snapshot = self._tulis(match, prediksi, options['window'])
+        snapshot = self._tulis(match, prediksi, options['window'], kandidat)
         self.stdout.write(
             self.style.SUCCESS(
                 f'\nSnapshot #{snapshot.pk} dibuat {snapshot.created_at:%d %b %Y %H:%M}, '
@@ -146,10 +153,35 @@ class Command(BaseCommand):
         ]
         return lama == self._susunan(prediksi)
 
+    def _cetak_hipotesis(self, kandidat):
+        self.stdout.write('\nKandidat hipotesis (BAHAN, bukan klaim final):')
+        if not kandidat:
+            self.stdout.write(
+                self.style.WARNING('  (nggak ada — statistik dasarnya belum tersedia)')
+            )
+            return
+        for i, k in enumerate(kandidat, start=1):
+            self.stdout.write(f'  {i}. {k["text"]}')
+            self.stdout.write(f'     {k["evidence_note"]}')
+        self.stdout.write(
+            '\n  Handoff: "App tidak menyimpulkan, dia menyiapkan bukti."\n'
+            '  Buka admin, sisakan tiga yang mau kamu pertaruhkan, hapus sisanya.'
+        )
+
     @staticmethod
-    def _tulis(match, prediksi, window):
+    def _tulis(match, prediksi, window, kandidat=()):
         snapshot = PredictionSnapshot.objects.create(
             match=match, note=build_note(prediksi, window)
+        )
+        HypothesisItem.objects.bulk_create(
+            HypothesisItem(
+                snapshot=snapshot,
+                order=i,
+                text=k['text'],
+                evidence_note=k['evidence_note'],
+                outcome=HypothesisItem.Outcome.PENDING,
+            )
+            for i, k in enumerate(kandidat, start=1)
         )
         LineupSlot.objects.bulk_create(
             LineupSlot(

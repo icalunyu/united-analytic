@@ -1147,3 +1147,89 @@ class PruneRawPayloadTests(TestCase):
         self._jalankan('--apply', '--keep-seasons', '1')
         sisa = set(RawPayload.objects.values_list('key', flat=True))
         self.assertEqual(sisa, {'111'})
+
+
+class KandidatHipotesisTests(TestCase):
+    """`suggest_hypotheses` — bahan buat analis, bukan klaim app.
+
+    Aturan utamanya: kandidat cuma dibikin kalau dasarnya ADA. Lebih baik dua
+    kandidat berdasar daripada lima yang satu di antaranya karangan.
+    """
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich')
+
+    def _laga(self, hari_lalu, formasi='4-2-3-1', sot=None, possession=None, gol=0):
+        from datetime import timedelta
+
+        from matches.models import MatchEvent, MatchTeamStatistics
+
+        m = Match.objects.create(
+            home_team=self.mu,
+            away_team=self.lawan,
+            kickoff_at=timezone.now() - timedelta(days=hari_lalu),
+            status=Match.Status.FINISHED,
+            home_formation=formasi,
+        )
+        if sot is not None or possession is not None:
+            MatchTeamStatistics.objects.create(
+                match=m, team=self.mu, shots_on_target=sot, possession_pct=possession
+            )
+        for i in range(gol):
+            MatchEvent.objects.create(
+                match=m, team=self.mu, event_type=MatchEvent.EventType.GOAL, minute=10 + i
+            )
+        return m
+
+    def _kandidat(self):
+        from matches.lineup_prediction import suggest_hypotheses
+
+        return suggest_hypotheses(self.mu, timezone.now())
+
+    def test_tanpa_laga_nggak_ada_kandidat(self):
+        self.assertEqual(self._kandidat(), [])
+
+    def test_formasi_jadi_kandidat_kalau_berulang(self):
+        for h in (5, 10, 15):
+            self._laga(h)
+        teks = [k['text'] for k in self._kandidat()]
+        self.assertTrue(any('4-2-3-1' in t for t in teks))
+
+    def test_statistik_kosong_nggak_melahirkan_kandidat_karangan(self):
+        """Kalau MatchTeamStatistics nggak ada, kandidat tembakan & possession
+        harus absen — bukan diisi angka default."""
+        for h in (5, 10, 15):
+            self._laga(h)
+        teks = ' '.join(k['text'] for k in self._kandidat())
+        self.assertNotIn('tembakan', teks)
+        self.assertNotIn('menguasai bola', teks)
+
+    def test_possession_ngawur_dibuang_dari_rata_rata(self):
+        """Laga pramusim lawan Wrexham tercatat possession 100% dengan 0
+        tembakan — data rusak. Kalau ikut dirata-rata, ambangnya ngaco."""
+        for h, p in ((5, 50), (10, 50), (15, 50), (20, 100)):
+            self._laga(h, possession=p, sot=5)
+        kandidat = [k for k in self._kandidat() if 'menguasai bola' in k['text']]
+        self.assertEqual(len(kandidat), 1)
+        self.assertIn('50%', kandidat[0]['text'])
+        self.assertIn('nggak masuk akal', kandidat[0]['evidence_note'])
+
+    def test_ambang_gol_ikut_rata_rata(self):
+        for h, g in ((5, 2), (10, 2), (15, 2)):
+            self._laga(h, gol=g)
+        teks = [k['text'] for k in self._kandidat() if 'gol' in k['text']][0]
+        self.assertIn('minimal 2 gol', teks)
+
+        Match.objects.all().delete()
+        for h in (5, 10, 15):
+            self._laga(h, gol=0)
+        teks = [k['text'] for k in self._kandidat() if 'gol' in k['text']][0]
+        self.assertIn('minimal 1 gol', teks)
+
+    def test_tiap_kandidat_bawa_kriteria_cek(self):
+        for h in (5, 10, 15):
+            self._laga(h, sot=5, possession=55, gol=1)
+        for k in self._kandidat():
+            self.assertIn('Cek:', k['evidence_note'], k['text'])
+            self.assertIn('Dasar:', k['evidence_note'], k['text'])

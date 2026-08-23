@@ -362,3 +362,124 @@ def build_note(prediksi, window):
         '- Rotasi, skorsing, dan transfer tidak terekam di data mana pun.',
     ]
     return '\n'.join(baris)
+
+
+# Possession di luar rentang ini itu data rusak, bukan dominasi ekstrem.
+# Kejadian nyata: laga pramusim lawan Wrexham tercatat possession 100% dengan
+# 0 tembakan tepat sasaran. Nilai begitu kalau ikut dirata-rata bakal bikin
+# ambang klaim ngaco.
+POSSESSION_WAJAR = (5, 95)
+
+
+def suggest_hypotheses(team, before, window=DEFAULT_WINDOW):
+    """Kandidat hipotesis dari pola data — BAHAN, bukan klaim final.
+
+    Handoff tegas: *"App tidak menyimpulkan, dia menyiapkan bukti. Kesimpulan
+    tetap dari analis."* Jadi yang dihasilkan di sini kandidat yang sudah
+    membawa angka dasarnya dan sudah punya kriteria cek yang bisa dijalankan
+    sesudah laga. Analis yang memutuskan mana yang dipertaruhkan.
+
+    Tiap kandidat cuma dibikin kalau dasarnya ADA. Kalau statistik yang
+    dibutuhkan kosong, kandidatnya nggak muncul sama sekali — lebih baik dua
+    kandidat berdasar daripada lima yang satu di antaranya karangan.
+    """
+    from django.db.models import Q
+
+    from matches.models import Match, MatchEvent, MatchShot, MatchTeamStatistics
+
+    laga = list(
+        Match.objects.filter(Q(home_team=team) | Q(away_team=team))
+        .filter(status__in=_FINAL, kickoff_at__lt=before)
+        .order_by('-kickoff_at')[:window]
+    )
+    if not laga:
+        return []
+
+    ids = [m.pk for m in laga]
+    kandidat = []
+
+    # 1. Formasi — paling bisa dicek persis.
+    formasi = Counter()
+    for m in laga:
+        f = m.home_formation if m.home_team_id == team.pk else m.away_formation
+        if f:
+            formasi[f] += 1
+    if formasi:
+        top, n = formasi.most_common(1)[0]
+        if n >= 2:
+            kandidat.append({
+                'text': f'MU turun dengan formasi {top}.',
+                'evidence_note': (
+                    f'Dasar: {n} dari {len(laga)} laga terakhir pakai {top}. '
+                    f'Cek: Match.home_formation/away_formation sesudah laga.'
+                ),
+            })
+
+    stats = list(MatchTeamStatistics.objects.filter(match_id__in=ids, team=team))
+
+    # 2. Tembakan tepat sasaran.
+    sot = [s.shots_on_target for s in stats if s.shots_on_target is not None]
+    if len(sot) >= 3:
+        rata = sum(sot) / len(sot)
+        ambang = max(1, round(rata))
+        kandidat.append({
+            'text': f'MU melepas minimal {ambang} tembakan tepat sasaran.',
+            'evidence_note': (
+                f'Dasar: rata-rata {rata:.1f} dari {len(sot)} laga '
+                f'(rentang {min(sot)}-{max(sot)}). '
+                f'Cek: MatchTeamStatistics.shots_on_target >= {ambang}.'
+            ),
+        })
+
+    # 3. Possession — cuma kalau datanya waras.
+    pos = [
+        s.possession_pct for s in stats
+        if s.possession_pct is not None
+        and POSSESSION_WAJAR[0] <= s.possession_pct <= POSSESSION_WAJAR[1]
+    ]
+    dibuang = len([s for s in stats if s.possession_pct is not None]) - len(pos)
+    if len(pos) >= 3:
+        rata = sum(pos) / len(pos)
+        ambang = round(rata / 5) * 5
+        catatan = f'Dasar: rata-rata {rata:.0f}% dari {len(pos)} laga'
+        if dibuang:
+            catatan += f' ({dibuang} laga dibuang karena angkanya nggak masuk akal)'
+        kandidat.append({
+            'text': f'MU menguasai bola minimal {ambang}%.',
+            'evidence_note': f'{catatan}. Cek: MatchTeamStatistics.possession_pct >= {ambang}.',
+        })
+
+    # 4. Gol.
+    gol = [
+        MatchEvent.objects.filter(match=m, team=team, event_type=MatchEvent.EventType.GOAL).count()
+        for m in laga
+    ]
+    if gol:
+        rata = sum(gol) / len(gol)
+        kandidat.append({
+            'text': 'MU mencetak minimal 2 gol.' if rata >= 1.5 else 'MU mencetak minimal 1 gol.',
+            'evidence_note': (
+                f'Dasar: rata-rata {rata:.1f} gol per laga dari {len(gol)} laga '
+                f'({"-".join(str(g) for g in gol)}). Cek: hitung MatchEvent bertipe GOAL.'
+            ),
+        })
+
+    # 5. xG — cuma laga Premier League yang punya (cakupan Understat).
+    xg_per_laga = []
+    for m in laga:
+        nilai = [s.xg for s in MatchShot.objects.filter(match=m, team=team) if s.xg]
+        if nilai:
+            xg_per_laga.append(sum(nilai))
+    if len(xg_per_laga) >= 2:
+        rata = sum(xg_per_laga) / len(xg_per_laga)
+        ambang = round(rata * 2) / 2  # bulatkan ke 0,5 terdekat
+        kandidat.append({
+            'text': f'xG MU di atas {ambang:.1f}.',
+            'evidence_note': (
+                f'Dasar: rata-rata {rata:.2f} dari {len(xg_per_laga)} laga yang punya xG. '
+                f'Cuma laga Premier League yang punya (cakupan Understat). '
+                f'Cek: jumlah MatchShot.xg sesudah pull_xg_understat jalan.'
+            ),
+        })
+
+    return kandidat
