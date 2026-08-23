@@ -307,3 +307,84 @@ class KanonikBukanHantuTests(TestCase):
         self.assertEqual(tersisa.count(), 1)
         self.assertEqual(tersisa.first().pk, di_mu.pk)
         self.assertTrue(tersisa.first().team.is_manchester_united)
+
+
+class TransferMergeTests(TestCase):
+    """Aturan `_merge_transfers`: statistik satu orang terbelah karena pindah klub.
+
+    Bedanya dari sisa roster: di sini DUA-DUANYA punya statistik, jadi butuh
+    bukti lebih kuat — tidak boleh ada satu tanggal pun yang muncul di dua
+    record, karena satu orang tidak bisa membela dua klub di hari yang sama.
+    """
+
+    def setUp(self):
+        from players.models import Team
+
+        self.west_ham = Team.objects.create(name='West Ham United')
+        self.burnley = Team.objects.create(name='Burnley')
+        self.lawan = Team.objects.create(name='Chelsea FC')
+
+    def _main(self, player, team, tanggal):
+        from datetime import datetime, time, timezone as dt_tz
+
+        from matches.models import Match, PlayerMatchStatistics
+
+        kickoff = datetime.combine(tanggal, time(15, 0), tzinfo=dt_tz.utc)
+        match = Match.objects.create(
+            home_team=team, away_team=self.lawan, kickoff_at=kickoff
+        )
+        PlayerMatchStatistics.objects.create(match=match, player=player, team=team)
+
+    @staticmethod
+    def _gabung():
+        from django.core.management import call_command
+
+        call_command('merge_duplicates', '--apply', '--players-only', verbosity=0)
+
+    def test_tanggal_terpisah_digabung_ke_klub_terakhir(self):
+        from datetime import date
+
+        from players.models import Player
+        from matches.models import PlayerMatchStatistics
+
+        lama = Player.objects.create(name='James Ward-Prowse', team=self.west_ham)
+        baru = Player.objects.create(name='James Ward-Prowse', team=self.burnley)
+        self._main(lama, self.west_ham, date(2025, 5, 11))
+        self._main(baru, self.burnley, date(2026, 5, 24))
+
+        self._gabung()
+        tersisa = Player.objects.filter(name='James Ward-Prowse')
+        self.assertEqual(tersisa.count(), 1)
+        # Klub dengan penampilan terakhir yang menang.
+        self.assertEqual(tersisa.first().pk, baru.pk)
+        # Dan statistiknya menyatu, bukan hilang sebelah.
+        self.assertEqual(PlayerMatchStatistics.objects.filter(player=baru).count(), 2)
+
+    def test_main_di_hari_yang_sama_berarti_dua_orang(self):
+        from datetime import date
+
+        from players.models import Player
+
+        a = Player.objects.create(name='Danny Ward', team=self.west_ham)
+        b = Player.objects.create(name='Danny Ward', team=self.burnley)
+        hari = date(2026, 3, 14)
+        self._main(a, self.west_ham, hari)
+        self._main(b, self.burnley, hari)
+
+        self._gabung()
+        self.assertEqual(Player.objects.filter(name='Danny Ward').count(), 2)
+
+    def test_provider_yang_membedakan_tetap_memblokir(self):
+        from datetime import date
+
+        from players.models import DataSource, Player, PlayerExternalRef
+
+        a = Player.objects.create(name='Josh King', team=self.west_ham)
+        b = Player.objects.create(name='Josh King', team=self.burnley)
+        self._main(a, self.west_ham, date(2025, 5, 11))
+        self._main(b, self.burnley, date(2026, 5, 24))
+        PlayerExternalRef.objects.create(player=a, source=DataSource.PREMIER_LEAGUE, external_id=3926)
+        PlayerExternalRef.objects.create(player=b, source=DataSource.PREMIER_LEAGUE, external_id=128976)
+
+        self._gabung()
+        self.assertEqual(Player.objects.filter(name='Josh King').count(), 2)

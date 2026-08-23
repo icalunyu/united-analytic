@@ -65,6 +65,7 @@ class Command(BaseCommand):
             total += self._merge_players(apply_changes)
             total += self._merge_co_occurring(apply_changes)
             total += self._merge_roster_leftovers(apply_changes)
+            total += self._merge_transfers(apply_changes)
 
         if not total:
             self.stdout.write(self.style.SUCCESS('Nggak ada duplikat. Nggak ada yang perlu digabung.'))
@@ -303,6 +304,102 @@ class Command(BaseCommand):
             )
             if apply_changes:
                 for loser in losers:
+                    absorb(loser, canonical)
+            merged += len(losers)
+
+        return merged
+
+    def _merge_transfers(self, apply_changes):
+        """Gabungin pemain yang statistiknya TERBELAH dua record karena transfer.
+
+        Ini yang paling merusak analisis: James Ward-Prowse punya 12 laga di
+        record West Ham dan 18 di record Burnley, jadi tolok ukur se-liga
+        membaca dia sebagai dua pemain setengah-musim, bukan satu pemain penuh.
+        Berbeda dari sisa roster, DUA-DUANYA punya statistik — jadi aturan itu
+        sengaja melewatinya, dan butuh bukti yang lebih kuat.
+
+        Buktinya: **tidak boleh ada satu tanggal pun yang muncul di dua record.**
+        Satu orang tidak bisa membela dua klub di hari yang sama. Kalau
+        tanggalnya terpisah bersih, itu pola transfer; kalau ada yang bentrok,
+        itu dua orang berbeda dan grupnya dilewati.
+
+        Waktu aturan ini ditulis, 15 grup lolos dan tidak satu pun punya tanggal
+        bentrok — semuanya transfer beneran (Kudus West Ham -> Tottenham,
+        Zinchenko Arsenal -> Forest, Nørgaard Brentford -> Arsenal).
+
+        Kanoniknya record dengan penampilan TERAKHIR, yaitu klub dia sekarang —
+        kecuali salah satunya record skuad MU yang aktif, aturan yang sama
+        seperti di _merge_roster_leftovers.
+        """
+        from matches.models import PlayerMatchStatistics
+
+        groups = defaultdict(list)
+        for player in Player.objects.select_related('team'):
+            groups[player_group_key(player)].append(player)
+
+        merged = 0
+        for key, players in sorted(groups.items()):
+            if len(players) < 2 or not key:
+                continue
+            if len({fold_accents(p.name) for p in players}) > 1:
+                continue
+
+            per_source = defaultdict(set)
+            for player in players:
+                for ref in player.external_refs.all():
+                    per_source[ref.source].add(player.pk)
+            if any(len(pks) > 1 for pks in per_source.values()):
+                continue
+
+            tanggal = {}
+            for player in players:
+                hari = {
+                    row.match.kickoff_at.date()
+                    for row in PlayerMatchStatistics.objects.filter(
+                        player=player
+                    ).select_related('match')
+                }
+                if hari:
+                    tanggal[player.pk] = hari
+            if len(tanggal) < 2:
+                continue  # urusan _merge_roster_leftovers, bukan di sini
+
+            # Satu tanggal yang muncul di dua record = dua orang berbeda.
+            pks = list(tanggal)
+            bentrok = any(
+                tanggal[pks[i]] & tanggal[pks[j]]
+                for i in range(len(pks))
+                for j in range(i + 1, len(pks))
+            )
+            if bentrok:
+                self.stdout.write(
+                    f'  lewati {players[0].name!r} — main di tanggal yang sama '
+                    f'untuk klub berbeda, jadi dua orang'
+                )
+                continue
+
+            skuad_mu = [
+                p for p in players
+                if p.team and p.team.is_manchester_united
+                and p.is_active
+                and any(r.source != DataSource.ESPN_COMMENTARY for r in p.external_refs.all())
+            ]
+            if skuad_mu:
+                canonical = skuad_mu[0]
+            else:
+                # Penampilan terakhir = klub dia sekarang.
+                canonical = max(tanggal, key=lambda pk: max(tanggal[pk]))
+                canonical = next(p for p in players if p.pk == canonical)
+
+            losers = [p for p in players if p.pk != canonical.pk]
+            self.stdout.write(
+                f'TRANSFER {canonical.name!r} (id={canonical.pk}, '
+                f'{canonical.team.name if canonical.team else "-"}) <- '
+                + ', '.join(f'{l.pk}@{l.team.name if l.team else "-"}' for l in losers)
+            )
+            if apply_changes:
+                for loser in losers:
+                    self._merge_stat_rows(canonical, loser)
                     absorb(loser, canonical)
             merged += len(losers)
 
