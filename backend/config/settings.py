@@ -3,6 +3,7 @@ Django settings for config project.
 """
 
 import os
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -251,7 +252,22 @@ FOTMOB_PL_LEAGUE_ID = os.environ.get('FOTMOB_PL_LEAGUE_ID', '47')
 UNDERSTAT_BASE_URL = os.environ.get('UNDERSTAT_BASE_URL', 'https://understat.com')
 # Nama tim di Understat dipakai langsung di URL, bukan ID numerik.
 UNDERSTAT_MU_TEAM_NAME = os.environ.get('UNDERSTAT_MU_TEAM_NAME', 'Manchester United')
-UNDERSTAT_DEFAULT_SEASON = os.environ.get('UNDERSTAT_DEFAULT_SEASON', '2025')
+def _current_football_season(today=None):
+    """Tahun musim berjalan menurut penomoran Understat (musim 2026 = 2026/27).
+
+    Musim Eropa mulai Agustus. Sebelum Juli, kita masih di musim yang dibuka
+    tahun sebelumnya. Dulu nilainya dipatok '2025' dan diam-diam basi begitu
+    musim baru mulai: seluruh 38 laga musim lama sudah tertarik, jadi
+    pull_xg_understat lapor "0 laga dicocokkan" tiap malam tanpa error, dan
+    laga musim berjalan nggak pernah dapat xG sama sekali.
+    """
+    today = today or date.today()
+    return today.year if today.month >= 7 else today.year - 1
+
+
+UNDERSTAT_DEFAULT_SEASON = os.environ.get(
+    'UNDERSTAT_DEFAULT_SEASON'
+) or str(_current_football_season())
 
 
 PL_BASE_URL = os.environ.get('PL_BASE_URL', 'https://footballapi.pulselive.com/football')

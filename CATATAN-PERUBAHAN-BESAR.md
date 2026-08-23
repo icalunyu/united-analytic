@@ -230,6 +230,39 @@ slot 2–5 sebagai bek empat menghasilkan formasi yang salah di layar **tanpa
 ada yang sadar**. Untuk menggambar formasi, pakai `formation_x`/`formation_y`
 dari FotMob.
 
+### 4.9 Understat terkunci di musim yang sudah selesai
+Ditemukan 2026-08-23, lima hari setelah sesi besar, saat memeriksa kesehatan
+produksi. `UNDERSTAT_DEFAULT_SEASON` dipatok `'2025'` di `settings.py`. Musim
+2025/26 tamat 24 Mei 2026 dan seluruh 38 laganya sudah tertarik, jadi penyaring
+inkremental melewati semuanya. Hasilnya tiap malam:
+
+```
+38 match dilewati (sudah pernah ditarik, pakai --refresh buat paksa).
+Selesai. 0 match dicocokkan, 0 tembakan, 0 statistik pemain disimpan.
+```
+
+**Exit code 0. Tidak ada error. Tidak ada baris di log yang terlihat merah.**
+Padahal musim 2026/27 sudah berjalan dan tidak satu pun laganya dapat xG.
+Understat adalah satu-satunya sumber xG/xA/xGChain/xGBuildup gratis yang
+mencakup Premier League, jadi diamnya dia melumpuhkan seluruh lapisan xG untuk
+musim berjalan.
+
+Pelajaran yang lebih luas: **konstanta musim yang ditulis tangan adalah bom
+waktu tahunan**, dan gejalanya bukan crash melainkan sukses palsu. Perintah
+yang melapor "selesai" sambil menyimpan nol baris harus dicurigai.
+
+Perbaikannya, `_current_football_season()` di `settings.py` menurunkan musim
+dari tanggal hari ini — bulan >= 7 berarti musim tahun itu, sebelumnya musim
+tahun lalu (batasnya diuji di 30 Juni vs 1 Juli). Variabel lingkungannya
+dipertahankan sebagai override untuk backfill musim lama, tapi sekarang
+dikosongkan secara default.
+
+Catatan pemantauan: karena `MatchIngest.ingested_at` itu `auto_now` dan cuma
+tersentuh kalau ada laga yang benar-benar masuk, sumber yang tidak menemukan
+apa-apa akan terlihat makin tua di Kartu Kesehatan Sumber. Understat terbaca
+**121 jam** — itulah petunjuk yang membongkar bug ini. Umur yang menua padahal
+cron-nya sukses tiap malam justru sinyal, bukan derau.
+
 ---
 
 ## 5. Krisis kualitas data: 294 → 38
