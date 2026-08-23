@@ -225,3 +225,82 @@ class CurrentFootballSeasonTests(SimpleTestCase):
             str(settings.UNDERSTAT_DEFAULT_SEASON),
             str(_current_football_season(date.today())),
         )
+
+
+class PullInjuriesQuotaTests(TestCase):
+    """Regresi: pull_injuries menghabiskan quota harian Highlightly tiap malam.
+
+    Penyebabnya dia me-loop SEMUA Player bertim MU — di produksi 98 orang, 60
+    di antaranya mantan pemain yang tidak akan pernah lolos verifikasi klub.
+    Tiap mantan pemain membakar 1 panggilan pencarian + verifikasi kandidat,
+    lalu gagal, tiap malam, selamanya.
+    """
+
+    def setUp(self):
+        from players.models import Player, Team
+
+        self.mu = Team.objects.create(name='Manchester United FC', is_manchester_united=True)
+        self.aktif = [
+            Player.objects.create(name=f'Aktif {i}', team=self.mu, is_active=True)
+            for i in range(3)
+        ]
+        self.mantan = [
+            Player.objects.create(name=f'Mantan {i}', team=self.mu, is_active=False)
+            for i in range(4)
+        ]
+
+    def _jalankan(self, **opts):
+        """Jalankan command dengan klien tiruan; kembalikan nama yang dipanggil."""
+        from unittest.mock import patch
+
+        from django.core.management import call_command
+
+        dipanggil = []
+
+        class KlienPalsu:
+            def get_player(self, external_id):
+                dipanggil.append(('detail', external_id))
+                return {'profile': {'club': {'current': 'Manchester United FC'}}, 'injuries': []}
+
+            def _get(self, path, params=None):
+                dipanggil.append(('cari', (params or {}).get('name')))
+                return {'data': []}
+
+        with patch(
+            'matches.management.commands.pull_injuries.HighlightlyClient',
+            return_value=KlienPalsu(),
+        ):
+            call_command('pull_injuries', **opts)
+        return dipanggil
+
+    def test_mantan_pemain_nggak_ikut_dipanggil(self):
+        dipanggil = self._jalankan()
+        dicari = [nama for jenis, nama in dipanggil if jenis == 'cari']
+        self.assertEqual(len(dicari), 3, 'cuma 3 pemain aktif yang boleh dipanggil')
+        for nama in dicari:
+            self.assertTrue(nama.startswith('Aktif'), f'{nama} mantan pemain, harusnya dilewati')
+
+    def test_include_inactive_mengembalikan_perilaku_lama(self):
+        dipanggil = self._jalankan(include_inactive=True)
+        dicari = [nama for jenis, nama in dipanggil if jenis == 'cari']
+        self.assertEqual(len(dicari), 7)
+
+    def test_pemain_yang_sudah_ke_link_diproses_duluan(self):
+        from players.models import DataSource, PlayerExternalRef
+
+        # Yang ke-link cuma butuh 1 panggilan; harus didahulukan supaya kalau
+        # quota habis di tengah, yang kepotong adalah pencarian pemain baru.
+        PlayerExternalRef.objects.create(
+            source=DataSource.HIGHLIGHTLY, external_id=99, player=self.aktif[2]
+        )
+        dipanggil = self._jalankan()
+        self.assertEqual(dipanggil[0], ('detail', 99))
+
+    def test_batas_panggilan_menghentikan_run_dengan_rapi(self):
+        # Tiap pemain tak ter-link dianggarkan 1 + MAX_VERIFY_PER_PLAYER
+        # panggilan, jadi anggaran segitu cuma cukup buat satu orang.
+        from matches.management.commands.pull_injuries import MAX_VERIFY_PER_PLAYER
+
+        dipanggil = self._jalankan(max_calls=1 + MAX_VERIFY_PER_PLAYER)
+        dicari = [n for jenis, n in dipanggil if jenis == 'cari']
+        self.assertEqual(len(dicari), 1, 'harus berhenti setelah anggaran habis')
