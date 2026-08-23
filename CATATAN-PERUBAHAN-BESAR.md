@@ -1189,3 +1189,126 @@ menariknya ulang butuh 309 panggilan ke API tidak resmi. Tidak masuk cron.
   Fungsinya justru mengendus penarikan yang "berhasil tapi kosong".
 - **Dua kosakata filter** untuk satu konsep: `MatchViewSet` (DRF) sudah punya
   `?season=` dan `?all=true`, halaman Jadwal memakai `?musim=` dan `?all=1`.
+
+
+---
+
+## 21. Tahap 2 dimulai: halaman Statistik
+
+### 21.1 Tiga kolom yang dikira mustahil — dua ternyata bisa
+
+Survei awal menyimpulkan tiga kolom terhalang. Setelah payload mentahnya
+dibongkar, kesimpulannya berubah untuk dua di antaranya.
+
+**Sv% — masalahnya lebih dalam dari "datanya kosong".** `shots_faced` memang
+berhenti diisi ESPN sejak musim 2025 (semua nol), tapi itu bukan masalah
+utamanya: **ia penyebut yang salah sejak awal.** Artinya di ESPN adalah seluruh
+tembakan ke arah gawang termasuk yang melenceng. Dari 500 baris produksi,
+**492 punya `shots_faced != saves + kebobolan`**. Onana: `shots_faced=7`,
+`saves=2`, kebobolan 3 — dibagi 7 jadi 29%, padahal dari tembakan yang
+benar-benar mengarah ke gawang dia menyelamatkan 2 dari 5 alias 40%.
+
+Penggantinya sudah ada di DB sejak lama: `saves / (saves + goals_conceded)`.
+
+**Umpan% — penyebutnya tidak pernah hilang, cuma dibuang parser.** FotMob
+mengirim umpan pemain sebagai pecahan dalam satu kunci:
+
+```json
+{"key": "accurate_passes",
+ "stat": {"type": "fractionWithPercentage", "total": 78, "value": 72}}
+```
+
+Parser cuma membaca `value`. Sekarang `total` ikut disimpan.
+
+*Koreksi ke bagian 10 catatan ini:* asumsi bahwa `'415 (86%)'` berarti
+415 = total itu **keliru**. Di level tim, angka pertama adalah umpan AKURAT,
+dan totalnya datang dari kunci `passes` yang terpisah (321/381 = 84%). Di level
+pemain formatnya bukan string sama sekali, melainkan objek `total`/`value`.
+
+**Prog/90 — benar-benar tidak ada, dan proksinya menyesatkan.** Nol kemunculan
+`prog`/`carries` di seluruh payload FotMob dan Understat. Statistik pemain ESPN
+cuma punya 15 nama, tidak satu pun soal umpan.
+
+Godaannya memakai `passes_into_final_third` sebagai proksi. Itu **ditolak
+berdasarkan data, bukan definisi**: per 90 menit, kiper mencatat **6,46** dan
+bek tengah **5,25**. Metrik yang menempatkan kiper di atas bek tengah jelas
+mengukur hal lain. Kolomnya diganti **"1/3 Akhir/90"** dengan label yang
+menyebut apa itu sebenarnya.
+
+### 21.2 Dua keputusan yang menentukan apakah halaman ini jujur
+
+**Penyebut per-90 bukan total menit pemain.** Musim 2025 cuma 566 dari 850
+baris punya `minutes_played`, dan baris yang punya menit belum tentu sama
+dengan yang punya `interceptions`. Membagi total dengan total menit bikin bias
+yang **besarnya berbeda-beda per pemain** — dan yang rusak bukan skala
+kolomnya, melainkan **urutan sortir**, justru fitur utama halaman ini. Tiap
+metrik per-90 memakai menit dari laga yang metrik itu ada.
+
+**"Baris tanpa data selalu di bawah di kedua arah"** tidak bisa dicapai satu
+`ORDER BY`: kalau `None` ikut disortir, membalik arah melemparnya ke atas. Yang
+kosong dipisah dulu, yang berisi disortir, lalu ditempel di belakang.
+
+### 21.3 Nol yang kelihatan seperti data
+
+Versi pertama halaman menampilkan **Sv% 0,0% untuk pemain lapangan**. ESPN
+menulis `goals_conceded` ke SEMUA baris pemain, bukan cuma kiper, jadi rumusnya
+jadi 0/(0+2). Di layar nol itu tidak kelihatan salah sama sekali — cuma
+kelihatan buruk.
+
+Ketahuan karena **membaca keluaran halamannya**, bukan dari test. Test-nya baru
+ditulis sesudah.
+
+---
+
+## 22. Cek Prediksi: penilainya
+
+Hipotesis yang tersimpan tanpa penilai cuma jadi baris `BELUM` selamanya.
+
+**Kriteria disimpan sebagai penanda terbaca-mesin** di `evidence_note`:
+`[cek:shots_on_target>=6]`.
+
+Kenapa penanda di teks dan bukan kolom terstruktur: **hipotesis yang ditulis
+analis sendiri tidak akan pernah punya kolom itu terisi**, dan memaksa analis
+mengisi formulir kriteria akan bikin fitur ini tidak kepakai. Dengan penanda,
+kandidat yang app hasilkan dinilai otomatis, kalimat bebas analis masuk apa
+adanya, dan statusnya tetap `BELUM` sampai dinilai manual. App tidak pura-pura
+mengerti kalimat yang bukan dia yang tulis.
+
+Tiga pagar yang sengaja dibuat:
+
+1. **Laga belum final ditolak.** Menilai di tengah laga memberi hasil yang
+   berubah lagi nanti.
+2. **"Datanya belum ada" tetap `BELUM`, bukan `MELESET`.** Kalau keliru,
+   hipotesis yang sah dihukum karena penarikan data telat.
+3. **Akurasi susunan membedakan** "kita tidak memprediksi" dari "susunan
+   sebenarnya belum masuk", dan tidak mengarang angka untuk keduanya.
+
+Satu pagar yang ketahuan justru dari test yang gagal: `prediction_before_kickoff()`
+menolak snapshot yang dibuat sesudah peluit. Test evaluator awalnya bikin
+snapshot dengan `auto_now_add` untuk laga kemarin, dan command-nya benar-benar
+menolak — itu pagar yang bikin seluruh panel ini berarti, dan sekarang punya
+test sendiri.
+
+---
+
+## 23. Status Tahap 2 dan yang menggantung
+
+| Halaman | Status |
+|---|---|
+| **Statistik** | **Selesai.** 11 kolom, filter musim & ajang, sortir dua arah. Kriteria selesai handoff terpenuhi dan dibuktikan test. |
+| **Skuad** | Halaman lama masih jalan. Versi desain butuh panel Konflik Sumber, yang **terhalang sumber cedera kedua** — sekarang cuma Highlightly, jadi tidak ada yang bisa berselisih. |
+| **Berita** | **Terblokir penuh.** Tidak ada model `NewsItem`, tidak ada sumber berita. Butuh keputusan produk dulu, bukan kerja teknis. |
+
+Yang menggantung:
+
+- **Panel Pra-laga belum ada.** Prediksi susunan dan hipotesis cuma terlihat di
+  Django admin; tidak ada `PredictionSnapshot` di seluruh `dashboard/`.
+- **Hipotesis Ipswich masih kandidat.** Empat kandidat tersimpan berstatus
+  `BELUM`; analis yang memilih tiga.
+- **`MatchIngest.rows` omong kosong** sejak penyaring inkremental — diisi total
+  berjalan seluruh run, bukan per laga.
+- **Dua kosakata filter** untuk satu konsep: `?season=` di API DRF vs `?musim=`
+  di halaman.
+- **Baris ganda Tom Heaton** 2026-08-08 (dua `PlayerMatchStatistics`, satu
+  `minutes_played=49`, satu `None`) — dugaan dedup laga meleset, belum
+  diselidiki.
