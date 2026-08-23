@@ -64,6 +64,7 @@ class Command(BaseCommand):
         if do_players:
             total += self._merge_players(apply_changes)
             total += self._merge_co_occurring(apply_changes)
+            total += self._merge_roster_leftovers(apply_changes)
 
         if not total:
             self.stdout.write(self.style.SUCCESS('Nggak ada duplikat. Nggak ada yang perlu digabung.'))
@@ -187,6 +188,103 @@ class Command(BaseCommand):
             if apply_changes:
                 for loser in losers:
                     self._merge_stat_rows(canonical, loser)
+                    absorb(loser, canonical)
+            merged += len(losers)
+
+        return merged
+
+    def _merge_roster_leftovers(self, apply_changes):
+        """Gabungin sisa roster: record tanpa statistik yang kembar dengan
+        record bermain-beneran, di tim yang berbeda.
+
+        Asalnya dari `pull_match_events_pl`, yang bikin Player untuk seluruh
+        skuad Premier League. Waktu pemainnya pindah klub, provider lain
+        (ESPN/FotMob) mencatatnya di klub baru — dan karena `resolve_player`
+        mencocokkan nama HANYA dalam satu tim, lahirlah record kedua. Yang lama
+        tertinggal tanpa pernah dapat satu pun baris statistik.
+
+        Sekarang belum ada data yang rusak: statistiknya semua menumpuk di satu
+        record. Yang diperbaiki di sini justru yang akan datang — selama dua
+        record itu hidup, `pull_match_events_pl` akan terus menaruh statistik di
+        record lama (dia resolve lewat premier_league id) sementara ESPN dan
+        FotMob menaruhnya di record baru. Begitu pemainnya main lagi, statistik
+        satu orang terbelah dua.
+
+        Dua pengaman, dan keduanya harus lolos:
+
+        1. **Tepat satu record punya statistik.** Kalau dua-duanya punya, ini
+           bukan sisa roster dan butuh penilaian lain. Kalau tak satu pun punya,
+           tidak ada bukti apa pun untuk menyatukan mereka.
+        2. **Tidak ada provider yang memegang dua record sekaligus.** Kalau
+           FotMob (atau Premier League) menerbitkan dua id berbeda untuk nama
+           yang sama, provider itu sendiri menyatakan mereka dua orang berbeda —
+           dan memang ada dua Ben Johnson, dua Josh King. Itu bukti yang lebih
+           kuat daripada kemiripan nama, jadi grup begitu dilewati.
+        3. **Nama lengkapnya harus identik.** Kunci pengelompokan cuma
+           (inisial, nama belakang) — cukup untuk aturan per-tim, tapi terlalu
+           longgar begitu penggabungan melintasi tim: 'Adam Armstrong' dan
+           'Aaron Armstrong' punya kunci yang sama persis. Di dalam satu tim
+           tabrakan begitu praktis mustahil; di seluruh liga tidak.
+        """
+        from matches.models import PlayerMatchStatistics
+
+        groups = defaultdict(list)
+        for player in Player.objects.select_related('team'):
+            groups[player_group_key(player)].append(player)
+
+        merged = 0
+        for key, players in sorted(groups.items()):
+            if len(players) < 2 or not key:
+                continue
+
+            # Pengaman 2 — provider yang menerbitkan dua id untuk grup ini
+            # menganggap mereka orang berbeda.
+            per_source = defaultdict(set)
+            for player in players:
+                for ref in player.external_refs.all():
+                    per_source[ref.source].add(player.pk)
+            pembeda = sorted(src for src, pks in per_source.items() if len(pks) > 1)
+            if pembeda:
+                self.stdout.write(
+                    f'  lewati {players[0].name!r} — {"/".join(pembeda)} '
+                    f'menerbitkan id berbeda, kemungkinan besar dua orang'
+                )
+                continue
+
+            # Pengaman 3 — nama lengkap harus sama persis, bukan cuma
+            # inisial + nama belakang.
+            if len({fold_accents(p.name) for p in players}) > 1:
+                continue
+
+            # Pengaman 1 — tepat satu record yang punya statistik.
+            berstatistik = [
+                p for p in players
+                if PlayerMatchStatistics.objects.filter(player=p).exists()
+            ]
+            if len(berstatistik) != 1:
+                continue
+
+            # Yang dipertahankan BUKAN otomatis yang punya statistik. Kalau
+            # salah satu record ada di MU, dialah yang menang: skuad MU
+            # disegarkan `pull_squad` tiap hari dan itu satu-satunya penanda
+            # tim yang benar-benar kita verifikasi. Tanpa aturan ini, Karl
+            # Darlow — terdaftar di skuad MU, tapi statistiknya dari masa
+            # Leeds — bakal digabung ke record Leeds dan hilang dari skuad.
+            #
+            # Statistiknya tetap ikut pindah, dan atribusi tim per laga aman
+            # karena tiap baris PlayerMatchStatistics simpan `team` sendiri.
+            di_mu = [p for p in players if p.team and p.team.is_manchester_united]
+            canonical = di_mu[0] if di_mu else berstatistik[0]
+            losers = [p for p in players if p.pk != canonical.pk]
+            self.stdout.write(
+                f'SISA ROSTER {canonical.name!r} (id={canonical.pk}, '
+                f'{canonical.team.name if canonical.team else "-"}) <- '
+                + ', '.join(
+                    f'{l.pk}@{l.team.name if l.team else "-"}' for l in losers
+                )
+            )
+            if apply_changes:
+                for loser in losers:
                     absorb(loser, canonical)
             merged += len(losers)
 

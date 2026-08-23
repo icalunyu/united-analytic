@@ -1,4 +1,4 @@
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 from .name_utils import (
     fold_accents,
@@ -79,3 +79,140 @@ class TeamNameMatchTests(SimpleTestCase):
 
     def test_nama_kosong_nggak_cocok_sama_apa_pun(self):
         self.assertFalse(team_names_match('', 'Manchester United'))
+
+
+class TeamAliasTests(SimpleTestCase):
+    """Julukan klub yang tidak bisa diturunkan dari nama resmi.
+
+    Regresi: Highlightly menyebut klub itu 'Wolves', provider lain
+    'Wolverhampton Wanderers'. Karena 'wolves' bukan awalan dari
+    'wolverhampton wanderers', team_names_match gagal dan lahirlah dua record
+    Team untuk satu klub — 6 laga nyangkut di klub tanpa satu pun pemain.
+    """
+
+    def test_julukan_dikenali(self):
+        self.assertTrue(team_names_match('Wolves', 'Wolverhampton Wanderers'))
+        self.assertTrue(team_names_match('Spurs', 'Tottenham Hotspur FC'))
+        self.assertTrue(team_names_match('Man Utd', 'Manchester United FC'))
+        self.assertTrue(team_names_match('West Brom', 'West Bromwich Albion'))
+
+    def test_awalan_persis_tetap_jalan(self):
+        # Jalur lama harus tetap hidup, bukan tergantikan peta alias.
+        self.assertTrue(team_names_match('Brighton', 'Brighton & Hove Albion FC'))
+
+    def test_klub_berbeda_tetap_dibedakan(self):
+        # Peta alias tidak boleh bikin klub sekota tertukar.
+        self.assertFalse(team_names_match('Manchester United', 'Manchester City'))
+        self.assertFalse(team_names_match('Sheffield United', 'Sheffield Wednesday'))
+
+    def test_sheffield_sengaja_nggak_masuk_peta(self):
+        # 'Sheffield' ambigu (United atau Wednesday?), jadi tidak dialiaskan.
+        #
+        # Catatan jujur: nama telanjang 'Sheffield' TETAP cocok ke keduanya
+        # lewat aturan awalan yang sudah ada sejak dulu — itu perilaku lama dan
+        # di luar cakupan perbaikan ini. Yang dijaga di sini cuma satu: peta
+        # alias tidak boleh ikut memperparah dengan memihak salah satu.
+        from players.name_utils import normalize_team_name
+
+        self.assertEqual(normalize_team_name('Sheffield'), 'sheffield')
+
+
+class RosterLeftoverMergeTests(TestCase):
+    """Aturan `_merge_roster_leftovers` di merge_duplicates.
+
+    Sisa roster = record tanpa statistik dari `pull_match_events_pl`, kembar
+    dengan record bermain-beneran di tim lain karena pemainnya pindah klub.
+    """
+
+    def setUp(self):
+        from players.models import Team
+
+        self.mu = Team.objects.create(name='Manchester United FC', is_manchester_united=True)
+        self.leeds = Team.objects.create(name='Leeds United FC')
+        self.chelsea = Team.objects.create(name='Chelsea FC')
+
+    @staticmethod
+    def _gabung():
+        from django.core.management import call_command
+
+        call_command('merge_duplicates', '--apply', '--players-only', verbosity=0)
+
+    def _beri_statistik(self, player, team):
+        from django.utils import timezone
+
+        from matches.models import Match, PlayerMatchStatistics
+
+        match = Match.objects.create(
+            home_team=team, away_team=self.chelsea, kickoff_at=timezone.now()
+        )
+        PlayerMatchStatistics.objects.create(match=match, player=player, team=team)
+
+    def test_sisa_roster_tanpa_statistik_digabung(self):
+        from players.models import Player
+
+        main = Player.objects.create(name='Aaron Cresswell', team=self.leeds)
+        self._beri_statistik(main, self.leeds)
+        sisa = Player.objects.create(name='Aaron Cresswell', team=self.chelsea)
+
+        self._gabung()
+        self.assertFalse(Player.objects.filter(pk=sisa.pk).exists())
+        self.assertTrue(Player.objects.filter(pk=main.pk).exists())
+
+    def test_record_mu_dipertahankan_walau_statistiknya_di_record_lain(self):
+        """Kasus Karl Darlow.
+
+        Statistiknya menempel di record Leeds, tapi dia terdaftar di skuad MU
+        yang disegarkan tiap hari. Kalau kanoniknya dipilih semata-mata dari
+        'siapa yang punya statistik', dia lenyap dari skuad MU.
+        """
+        from players.models import Player
+
+        di_mu = Player.objects.create(name='Karl Darlow', team=self.mu)
+        di_leeds = Player.objects.create(name='Karl Darlow', team=self.leeds)
+        self._beri_statistik(di_leeds, self.leeds)
+
+        self._gabung()
+        tersisa = Player.objects.filter(name='Karl Darlow')
+        self.assertEqual(tersisa.count(), 1)
+        self.assertEqual(tersisa.first().pk, di_mu.pk)
+        self.assertTrue(tersisa.first().team.is_manchester_united)
+        # Statistiknya harus ikut pindah, bukan hilang bersama record Leeds.
+        from matches.models import PlayerMatchStatistics
+
+        self.assertEqual(PlayerMatchStatistics.objects.filter(player=di_mu).count(), 1)
+        self.assertFalse(Player.objects.filter(pk=di_leeds.pk).exists())
+
+    def test_provider_yang_menerbitkan_dua_id_memblokir_penggabungan(self):
+        """Kasus Ben Johnson — dua orang berbeda yang kebetulan senama."""
+        from players.models import DataSource, Player, PlayerExternalRef
+
+        a = Player.objects.create(name='Ben Johnson', team=self.leeds)
+        self._beri_statistik(a, self.leeds)
+        b = Player.objects.create(name='Ben Johnson', team=self.chelsea)
+        PlayerExternalRef.objects.create(player=a, source=DataSource.PREMIER_LEAGUE, external_id=1)
+        PlayerExternalRef.objects.create(player=b, source=DataSource.PREMIER_LEAGUE, external_id=2)
+
+        self._gabung()
+        self.assertEqual(Player.objects.filter(name='Ben Johnson').count(), 2)
+
+    def test_dua_duanya_punya_statistik_nggak_disentuh(self):
+        from players.models import Player
+
+        a = Player.objects.create(name='Danny Ward', team=self.leeds)
+        b = Player.objects.create(name='Danny Ward', team=self.chelsea)
+        self._beri_statistik(a, self.leeds)
+        self._beri_statistik(b, self.chelsea)
+
+        self._gabung()
+        self.assertEqual(Player.objects.filter(name='Danny Ward').count(), 2)
+
+    def test_nama_lengkap_beda_nggak_digabung(self):
+        """Kunci grup cuma (inisial, nama belakang) — terlalu longgar lintas tim."""
+        from players.models import Player
+
+        adam = Player.objects.create(name='Adam Armstrong', team=self.leeds)
+        self._beri_statistik(adam, self.leeds)
+        Player.objects.create(name='Aaron Armstrong', team=self.chelsea)
+
+        self._gabung()
+        self.assertEqual(Player.objects.filter(name__endswith='Armstrong').count(), 2)

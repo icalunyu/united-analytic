@@ -40,9 +40,38 @@ def fold_accents(text):
     return ''.join(char for char in decomposed if not unicodedata.combining(char))
 
 
+# Julukan dan singkatan yang TIDAK bisa diturunkan dari nama resmi.
+#
+# team_names_match sudah menangani nama pendek yang berupa awalan persis
+# ('Brighton' vs 'Brighton & Hove Albion FC'). Yang tidak tertangani adalah
+# julukan — 'Wolves' bukan awalan 'Wolverhampton Wanderers' — dan singkatan
+# yang memotong kata di tengah ('Man Utd', 'West Brom').
+#
+# Di produksi ini sempat melahirkan dua record Team untuk satu klub: Highlightly
+# menyebutnya 'Wolves', provider lain 'Wolverhampton Wanderers', dan 6 laga
+# nyangkut di klub yang tidak punya satu pun pemain.
+#
+# Sengaja dijaga tetap pendek dan hanya yang tidak ambigu. 'Sheffield' tidak
+# masuk (United atau Wednesday?), begitu juga 'Inter' dan 'City'.
+_TEAM_ALIASES = {
+    'wolves': 'wolverhampton wanderers',
+    'spurs': 'tottenham hotspur',
+    'man utd': 'manchester united',
+    'man united': 'manchester united',
+    'man city': 'manchester city',
+    'west brom': 'west bromwich albion',
+    'wba': 'west bromwich albion',
+    'nottm forest': 'nottingham forest',
+    'notts forest': 'nottingham forest',
+    'sheff utd': 'sheffield united',
+    'sheff wed': 'sheffield wednesday',
+    'psg': 'paris saint germain',
+}
+
+
 def normalize_team_name(name):
     """Samain nama tim antar provider: buang suffix klub (FC/AFC/dll), aksen,
-    tanda baca, dan spasi berlebih."""
+    tanda baca, spasi berlebih, lalu terjemahkan julukan yang dikenal."""
     name = _SUFFIX_PATTERN.sub('', name or '')
     # Harus sebelum _NON_ALNUM_PATTERN: pola itu ganti tiap karakter non-ASCII
     # jadi SPASI, jadi tanpa fold duluan 'Beşiktaş' kepecah jadi 'be ikta'
@@ -50,7 +79,7 @@ def normalize_team_name(name):
     name = fold_accents(name)
     name = _NON_ALNUM_PATTERN.sub(' ', name)
     name = _WHITESPACE_PATTERN.sub(' ', name).strip()
-    return name
+    return _TEAM_ALIASES.get(name, name)
 
 
 def team_names_match(name_a, name_b):
