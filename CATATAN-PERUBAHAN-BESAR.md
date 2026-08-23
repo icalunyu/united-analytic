@@ -648,6 +648,151 @@ backup-pg-20260817-113509.dump   sebelum integrasi FotMob
 backup-pg-preliga-*.dump         sebelum backfill liga
 backup-pg-preprov-*.dump         sebelum sistem jejak sumber
 backup-pg-premerge-*.dump        sebelum penggabungan co-occurrence
+backup-pg-premerge2-*.dump       sebelum penggabungan sisa roster (23 Agu)
+backup-pg-prebackfill-*.dump     sebelum backfill ESPN 6 musim (23 Agu)
+backup-pg-postbackfill-*.dump    sesudah backfill, sebelum merge lanjutan
 ```
 
 Rollback ke SQLite kalau perlu: kosongkan `DB_ENGINE`, `touch tmp/restart.txt`.
+
+
+---
+
+## 17. Sesi 23 Agustus: tiga masalah operasional
+
+Lima hari cron berjalan sendirian, lalu tiga masalah ketahuan sekaligus.
+Yang menyatukan ketiganya: **tidak satu pun memunculkan error.** Semuanya
+melaporkan sukses sambil diam-diam tidak bekerja.
+
+### 17.1 Highlightly: quota dibakar mantan pemain
+
+`pull_injuries` me-loop semua Player bertim MU — 98 orang, 60 di antaranya
+mantan pemain. Mantan pemain tidak akan pernah lolos verifikasi klub (klub
+mereka di Highlightly bukan MU lagi), jadi tiap malam mereka membakar 2+
+panggilan hanya untuk gagal. Quota harian habis sebelum skuad inti sempat
+diperbarui — 6 kali dalam 6 hari log.
+
+Perbaikannya tiga lapis, dan urutannya penting:
+
+1. Default hanya skuad aktif. 154 → 43 panggilan per malam.
+2. Pemain yang sudah ter-link diproses **duluan**. Mereka cuma butuh 1
+   panggilan dan justru merekalah yang datanya kepakai; kalau quota habis di
+   tengah, yang kepotong pencarian pemain baru, bukan pembaruan cedera skuad
+   inti.
+3. `--max-calls` dan batas verifikasi kandidat per pemain. Nama umum bisa
+   mengembalikan belasan kandidat yang semuanya lolos pencocokan nama.
+
+Hasil nyata: 44/80 panggilan, tuntas, 259 entri cedera terproses.
+
+### 17.2 Duplikat: metriknya sendiri menyesatkan
+
+Angka "55 kunci nama pemain aktif muncul lebih dari sekali" yang saya pakai
+sebagai alarm ternyata **sebagian besar bukan duplikat**. Kunci pengelompokan
+adalah (inisial depan, nama belakang) — cukup untuk mencocokkan 'S. Amrabat'
+dengan 'Sofyan Amrabat', tapi begitu dipakai melintasi seluruh liga ia
+menyatukan orang yang jelas berbeda: *Aaron* vs *Alfie* Cresswell, *Abdou* vs
+*Amad* vs *Amadou* Diallo, *André* vs *Angel* Gomes, *Adrian* vs *Andreas*
+Pereira.
+
+Pelajarannya: **sebuah metrik pemantauan bisa jadi sumber alarm palsu yang
+justru menyita perhatian dari kerusakan yang nyata.** Yang benar-benar merusak
+bukan jumlah nama kembar, melainkan berapa pemain yang statistiknya terbelah.
+
+Dua kelas kerusakan nyata ditemukan, masing-masing butuh bukti berbeda:
+
+**Sisa roster** (`_merge_roster_leftovers`). `pull_match_events_pl` membuat
+Player untuk seluruh skuad Premier League. Waktu pemainnya pindah klub,
+provider lain mencatatnya di klub baru, dan karena `resolve_player`
+mencocokkan nama HANYA dalam satu tim, lahir record kedua. Yang lama tertinggal
+tanpa statistik.
+
+Waktu ditemukan, belum ada data yang rusak — statistiknya menumpuk di satu
+record. Yang dicegah justru yang akan datang: selama dua record hidup,
+`pull_match_events_pl` terus resolve lewat `premier_league` id ke record lama
+sementara ESPN/FotMob ke record baru. Begitu pemainnya main lagi, terbelah.
+
+**Transfer** (`_merge_transfers`). Di sini kerusakannya sudah terjadi: James
+Ward-Prowse punya 12 laga di record West Ham dan 18 di record Burnley, jadi
+tolok ukur se-liga membacanya sebagai dua pemain setengah-musim. 15 grup
+serupa: Kudus West Ham → Tottenham, Zinchenko Arsenal → Forest, Nørgaard
+Brentford → Arsenal.
+
+Buktinya sederhana dan kuat: **tidak boleh ada satu tanggal pun yang muncul di
+dua record.** Satu orang tidak bisa membela dua klub di hari yang sama.
+
+### 17.3 Kanonik: "MU menang" hampir jadi bencana
+
+Aturan pertama saya — kalau salah satu record ada di MU, dialah yang
+dipertahankan — terdengar masuk akal: skuad MU satu-satunya roster yang
+disegarkan tiap hari. Dry run membuktikannya berbahaya.
+
+Parser komentar ESPN sempat salah-atribusi pemain lawan ke MU, menyisakan
+record hantu: non-aktif, nol statistik, satu-satunya sumber `espn_commentary`.
+Ademola Lookman, Calvert-Lewin, Daniel James, dan Jayden Bogle semuanya punya
+record MU semacam itu **padahal tidak pernah membela MU**. Aturan naif
+menjadikan hantu itu kanonik dan membuang record asli yang punya 20–37 laga.
+
+Syaratnya diperketat jadi tiga: harus MU, harus `is_active`, dan harus punya
+sumber selain komentar. Sesudah itu Jadon Sancho lolos dengan benar (record
+MU-nya non-aktif karena sudah pindah, jadi yang menang Aston Villa dengan 23
+laga) dan Karl Darlow juga (aktif di skuad MU lewat `football_data`, jadi dia
+yang dipertahankan meski seluruh statistiknya dari masa Leeds).
+
+**Ini alasan `--apply` tidak boleh jadi default.** Dry run yang dibaca baris
+per baris adalah yang menangkapnya, bukan test.
+
+### 17.4 Julukan klub
+
+`team_names_match` sudah menangani nama pendek yang berupa awalan persis
+('Brighton' vs 'Brighton & Hove Albion'), tapi 'Wolves' bukan awalan
+'Wolverhampton Wanderers'. Akibatnya dua record Team untuk satu klub, dan 6
+laga nyangkut di klub yang tidak punya satu pun pemain. Peta `_TEAM_ALIASES`
+sengaja pendek dan hanya yang tidak ambigu — 'Sheffield' tidak masuk (United
+atau Wednesday?).
+
+### 17.5 Momentum: celahnya seluruhnya historis
+
+Kurva momentum dihitung **live di view** dari `MatchPlay`, tidak pernah
+disimpan. Tabel `MatchMomentum` isinya murni FotMob dan cuma dipakai
+`calibrate_momentum` sebagai pembanding. Jadi kurva hanya muncul di laga yang
+punya play-by-play ESPN — waktu diperiksa, 45 laga.
+
+Sebarannya memberi tahu persis di mana celahnya: musim 2025 dan 2026 hampir
+penuh, musim 2019–2024 **kosong sama sekali**. ESPN ternyata melayani musim
+lama lewat parameter `season`, jadi backfill enam musim menutupnya:
+
+| | sebelum | sesudah |
+|---|---|---|
+| `MatchPlay` | 3.246 | 28.869 |
+| Laga MU punya momentum | 45 | 391 dari 429 |
+| Match | 722 | 821 |
+| Player | 1.434 | 2.834 |
+
+Fallback ke momentum FotMob sempat dipertimbangkan dan **ditolak berdasarkan
+data**: hanya 1 laga MU yang punya FotMob tanpa play ESPN, jadi kerumitannya
+tidak dibayar apa pun.
+
+Dua efek samping yang wajib diantisipasi kalau backfill diulang:
+
+1. **Skuad MU melonjak 38 → 79.** Record pemain historis lahir dengan
+   `is_active` default. `pull_squad` adalah penyelarasnya — wajib dijalankan
+   sesudah backfill, bukan opsional.
+2. **Duplikat ikut lahir.** Backfill menambah 28 tim lawan dan ~1.500 pemain
+   dari enam musim. Jalankan `merge_duplicates` sesudahnya.
+
+Urutan yang benar: `pull_match_events_espn --season N` → `pull_squad` →
+`merge_duplicates` (dry run, dibaca) → `merge_duplicates --apply`.
+
+Skripnya ada di `scripts/backfill-espn.sh`. Sekali jalan, tidak masuk cron.
+
+### 17.6 Deploy: `git pull` yang gagal tapi tampak sukses
+
+Server **bukan git repo**, tapi README menyuruh `git pull origin main`.
+Perintahnya dipipe (`git pull ... | tail -3`), dan exit status pipeline itu
+milik perintah terakhir — `tail`, yang selalu sukses. Jadi `set -e` tidak
+menggigit, `migrate` dan `collectstatic` jalan normal, dan deploy melapor
+sukses padahal tidak satu byte pun berubah.
+
+Ketahuan hanya karena nilai yang diperiksa sesudahnya masih yang lama.
+README sudah diperbaiki dengan perintah `rsync` yang sebenarnya dipakai. Kalau
+memipe perintah yang kegagalannya penting, pakai `set -o pipefail`.

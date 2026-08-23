@@ -121,6 +121,33 @@ ngasih data yang sama bentuknya dan bisa dijangkau.
 Patokan sekarang: korelasi rata-rata **+0.44**. Di bawah 0.6, jadi masih ada
 ruang setel di `PLAY_WEIGHTS` — bedanya sekarang hasil setelan itu keukur.
 
+### Cakupan momentum & backfill musim lama
+
+Kurvanya dihitung **live di view** dari `MatchPlay`, nggak pernah disimpan.
+Konsekuensinya langsung: laga yang nggak punya play-by-play ESPN nggak punya
+kurva sama sekali. (Tabel `MatchMomentum` itu isinya momentum FotMob, dipakai
+`calibrate_momentum` sebagai pembanding — bukan sumber tampilan.)
+
+ESPN melayani musim lama lewat `--season`, jadi celahnya bisa ditutup:
+
+```bash
+python manage.py pull_match_events_espn --season 2022   # semua kompetisi
+```
+
+`scripts/backfill-espn.sh` ngerjain beberapa musim sekaligus dengan jeda
+(ESPN nolak koneksi kalau ditembak beruntun). Sekali jalan, **nggak** masuk
+cron.
+
+Dua hal yang wajib dikerjain **sesudah** backfill, bukan opsional:
+
+```bash
+python manage.py pull_squad          # backfill bikin pemain historis lahir
+                                     # dengan is_active default — ini yang
+                                     # nyelarasin lagi (38 -> 79 kalau dilewat)
+python manage.py merge_duplicates    # dry run dulu, BACA barisnya
+python manage.py merge_duplicates --apply
+```
+
 ## Deploy ke cPanel (production)
 
 Server ini (DomaiNesia, `musafar.web.id`) udah pernah dipakai buat deploy app Django lain, jadi polanya udah dikenal:
