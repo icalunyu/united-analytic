@@ -763,10 +763,15 @@ lama lewat parameter `season`, jadi backfill enam musim menutupnya:
 
 | | sebelum | sesudah |
 |---|---|---|
-| `MatchPlay` | 3.246 | 28.869 |
-| Laga MU punya momentum | 45 | 391 dari 429 |
-| Match | 722 | 821 |
-| Player | 1.434 | 2.834 |
+| `MatchPlay` | 3.246 | 31.073 |
+| Laga MU punya momentum | 45 dari 325 | **421 dari 437** (96%) |
+| Match | 722 | 823 |
+| `PlayerMatchStatistics` | 12.500 | 27.777 |
+| Player | 1.434 | 3.148 |
+| Team | 60 | 89 |
+
+Sisa 16 laga tanpa kurva itu laga yang ESPN memang tidak punya play-by-play-nya
+(sebagian friendly dan cup lama), bukan kegagalan penarikan.
 
 Fallback ke momentum FotMob sempat dipertimbangkan dan **ditolak berdasarkan
 data**: hanya 1 laga MU yang punya FotMob tanpa play ESPN, jadi kerumitannya
