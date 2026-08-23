@@ -164,10 +164,16 @@ class RosterLeftoverMergeTests(TestCase):
         Statistiknya menempel di record Leeds, tapi dia terdaftar di skuad MU
         yang disegarkan tiap hari. Kalau kanoniknya dipilih semata-mata dari
         'siapa yang punya statistik', dia lenyap dari skuad MU.
+
+        Record MU-nya harus didukung feed skuad — lihat KanonikBukanHantuTests
+        untuk kenapa 'ada di MU' saja tidak cukup.
         """
-        from players.models import Player
+        from players.models import DataSource, Player, PlayerExternalRef
 
         di_mu = Player.objects.create(name='Karl Darlow', team=self.mu)
+        PlayerExternalRef.objects.create(
+            player=di_mu, source=DataSource.FOOTBALL_DATA, external_id=7913
+        )
         di_leeds = Player.objects.create(name='Karl Darlow', team=self.leeds)
         self._beri_statistik(di_leeds, self.leeds)
 
@@ -216,3 +222,88 @@ class RosterLeftoverMergeTests(TestCase):
 
         self._gabung()
         self.assertEqual(Player.objects.filter(name__endswith='Armstrong').count(), 2)
+
+
+class KanonikBukanHantuTests(TestCase):
+    """Record MU tidak otomatis menang — harus aktif dan bukan hantu komentar.
+
+    Parser komentar ESPN sempat salah-atribusi pemain lawan ke MU, menyisakan
+    record non-aktif, nol statistik, sumber `espn_commentary` saja. Ademola
+    Lookman dan Daniel James punya record MU semacam itu padahal tidak pernah
+    membela MU.
+    """
+
+    def setUp(self):
+        from players.models import Team
+
+        self.mu = Team.objects.create(name='Manchester United FC', is_manchester_united=True)
+        self.villa = Team.objects.create(name='Aston Villa FC')
+        self.lawan = Team.objects.create(name='Chelsea FC')
+
+    def _beri_statistik(self, player, team):
+        from django.utils import timezone
+
+        from matches.models import Match, PlayerMatchStatistics
+
+        match = Match.objects.create(
+            home_team=team, away_team=self.lawan, kickoff_at=timezone.now()
+        )
+        PlayerMatchStatistics.objects.create(match=match, player=player, team=team)
+
+    @staticmethod
+    def _gabung():
+        from django.core.management import call_command
+
+        call_command('merge_duplicates', '--apply', '--players-only', verbosity=0)
+
+    def test_record_hantu_komentar_nggak_boleh_jadi_kanonik(self):
+        from players.models import DataSource, Player, PlayerExternalRef
+
+        hantu = Player.objects.create(name='Ademola Lookman', team=self.mu, is_active=False)
+        PlayerExternalRef.objects.create(
+            player=hantu, source=DataSource.ESPN_COMMENTARY, external_id=1926081934
+        )
+        asli = Player.objects.create(name='Ademola Lookman', team=self.villa)
+        PlayerExternalRef.objects.create(player=asli, source=DataSource.FOTMOB, external_id=690516)
+        self._beri_statistik(asli, self.villa)
+
+        self._gabung()
+        tersisa = Player.objects.filter(name='Ademola Lookman')
+        self.assertEqual(tersisa.count(), 1)
+        self.assertEqual(tersisa.first().pk, asli.pk)
+        self.assertFalse(tersisa.first().team.is_manchester_united)
+
+    def test_mantan_pemain_mu_kalah_dari_klub_barunya(self):
+        """Jadon Sancho: record MU-nya non-aktif karena sudah pindah."""
+        from players.models import DataSource, Player, PlayerExternalRef
+
+        lama = Player.objects.create(name='Jadon Sancho', team=self.mu, is_active=False)
+        PlayerExternalRef.objects.create(
+            player=lama, source=DataSource.PREMIER_LEAGUE, external_id=14801
+        )
+        baru = Player.objects.create(name='Jadon Sancho', team=self.villa)
+        PlayerExternalRef.objects.create(player=baru, source=DataSource.FOTMOB, external_id=846381)
+        self._beri_statistik(baru, self.villa)
+
+        self._gabung()
+        tersisa = Player.objects.filter(name='Jadon Sancho')
+        self.assertEqual(tersisa.count(), 1)
+        self.assertEqual(tersisa.first().pk, baru.pk)
+
+    def test_pemain_skuad_mu_aktif_tetap_menang(self):
+        """Karl Darlow: aktif di skuad MU, sumbernya feed skuad, bukan komentar."""
+        from players.models import DataSource, Player, PlayerExternalRef
+
+        di_mu = Player.objects.create(name='Karl Darlow', team=self.mu, is_active=True)
+        PlayerExternalRef.objects.create(
+            player=di_mu, source=DataSource.FOOTBALL_DATA, external_id=7913
+        )
+        lama = Player.objects.create(name='Karl Darlow', team=self.villa)
+        PlayerExternalRef.objects.create(player=lama, source=DataSource.FOTMOB, external_id=163604)
+        self._beri_statistik(lama, self.villa)
+
+        self._gabung()
+        tersisa = Player.objects.filter(name='Karl Darlow')
+        self.assertEqual(tersisa.count(), 1)
+        self.assertEqual(tersisa.first().pk, di_mu.pk)
+        self.assertTrue(tersisa.first().team.is_manchester_united)

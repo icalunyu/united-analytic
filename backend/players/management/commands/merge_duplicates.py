@@ -18,7 +18,7 @@ from django.apps import apps
 from django.core.management.base import BaseCommand
 
 from players.merge_utils import absorb
-from players.models import Player, Team
+from players.models import DataSource, Player, Team
 from players.provenance import resolve_updates
 from players.name_utils import fold_accents, normalize_team_name
 
@@ -264,17 +264,35 @@ class Command(BaseCommand):
             if len(berstatistik) != 1:
                 continue
 
-            # Yang dipertahankan BUKAN otomatis yang punya statistik. Kalau
-            # salah satu record ada di MU, dialah yang menang: skuad MU
-            # disegarkan `pull_squad` tiap hari dan itu satu-satunya penanda
-            # tim yang benar-benar kita verifikasi. Tanpa aturan ini, Karl
-            # Darlow — terdaftar di skuad MU, tapi statistiknya dari masa
-            # Leeds — bakal digabung ke record Leeds dan hilang dari skuad.
+            # Yang dipertahankan BUKAN otomatis yang punya statistik.
+            #
+            # Karl Darlow terdaftar di skuad MU (record aktif dari
+            # `pull_squad`), tapi seluruh statistiknya dari masa Leeds. Memilih
+            # kanonik semata-mata dari "siapa yang punya statistik" akan
+            # menghapusnya dari skuad MU.
+            #
+            # Tapi "ada di MU" saja tidak cukup, dan ini pelajaran mahal:
+            # parser komentar ESPN sempat salah-atribusi pemain lawan ke MU,
+            # meninggalkan record hantu — non-aktif, nol statistik, dan
+            # satu-satunya sumbernya `espn_commentary`. Ademola Lookman,
+            # Calvert-Lewin, Daniel James, dan Jayden Bogle semuanya punya
+            # record MU semacam itu padahal tidak pernah membela MU. Aturan
+            # "MU menang" yang naif justru menjadikan hantu itu kanonik.
+            #
+            # Jadi syaratnya diperketat: harus MU, harus `is_active`, dan harus
+            # punya sumber selain komentar. Jadon Sancho lolos saringan ini
+            # dengan benar — record MU-nya non-aktif karena dia sudah pindah,
+            # jadi yang menang record Aston Villa yang punya 23 laga.
             #
             # Statistiknya tetap ikut pindah, dan atribusi tim per laga aman
             # karena tiap baris PlayerMatchStatistics simpan `team` sendiri.
-            di_mu = [p for p in players if p.team and p.team.is_manchester_united]
-            canonical = di_mu[0] if di_mu else berstatistik[0]
+            skuad_mu = [
+                p for p in players
+                if p.team and p.team.is_manchester_united
+                and p.is_active
+                and any(r.source != DataSource.ESPN_COMMENTARY for r in p.external_refs.all())
+            ]
+            canonical = skuad_mu[0] if skuad_mu else berstatistik[0]
             losers = [p for p in players if p.pk != canonical.pk]
             self.stdout.write(
                 f'SISA ROSTER {canonical.name!r} (id={canonical.pk}, '
