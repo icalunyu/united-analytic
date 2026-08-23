@@ -1,7 +1,9 @@
-from django.db.models import Q
+from django.core.paginator import Paginator
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 
+from matches import competitions
 from matches.models import Match, MatchEvent
 from matches.momentum import build_momentum
 from players.models import Injury, Player
@@ -196,24 +198,81 @@ def home(request):
     return render(request, 'dashboard/home.html', context)
 
 
+PER_HALAMAN = 25
+
+
 def schedule(request):
-    show_all = request.GET.get('all') == '1'
+    """Jadwal + arsip, bisa disaring per musim dan kompetisi.
+
+    Dulu halaman ini cuma punya toggle `?all=1` yang motong di 100 laga
+    terbaru. Sesudah backfill 8 musim ada 470 laga MU di DB, jadi ~370 di
+    antaranya **nggak bisa dijangkau lewat UI sama sekali** — kerja backfill
+    praktis nggak kelihatan.
+    """
+    musim = request.GET.get('musim') or ''
+    kompetisi = request.GET.get('kompetisi') or ''
+    menyaring = bool(musim or kompetisi or request.GET.get('all') == '1')
+
     qs = mu_matches()
 
-    if show_all:
-        matches = qs.order_by('-kickoff_at')[:100]
+    # Facet dihitung dari SELURUH laga MU, bukan dari hasil yang udah disaring —
+    # supaya pilihan yang lagi aktif nggak menghilangkan pilihan lain.
+    #
+    # `.order_by()` kosong itu WAJIB, bukan gaya-gayaan: Match.Meta punya
+    # `ordering = ['kickoff_at']`, dan Django nyeret kolom ordering itu ke
+    # GROUP BY. Tanpa dikosongin, query ini balikin 288 baris (satu per
+    # kickoff unik) bukan 8.
+    musim_tersedia = [
+        r['season']
+        for r in qs.order_by().values('season').annotate(n=Count('id')).order_by('-season')
+        if r['season']
+    ]
+
+    jumlah_per_kategori = {}
+    for nama, n in qs.order_by().values_list('league_name').annotate(n=Count('id')):
+        jumlah_per_kategori[competitions.classify(nama)] = (
+            jumlah_per_kategori.get(competitions.classify(nama), 0) + n
+        )
+    kategori_tersedia = [
+        {
+            'kunci': k,
+            'label': competitions.LABELS[k],
+            'jumlah': jumlah_per_kategori[k],
+        }
+        for k in competitions.ORDER
+        if jumlah_per_kategori.get(k)
+    ]
+
+    if musim.isdigit():
+        qs = qs.filter(season=int(musim))
+    if kompetisi in competitions.LABELS:
+        qs = qs.filter(league_name__in=competitions.league_names_for(kompetisi))
+
+    if menyaring:
+        qs = qs.order_by('-kickoff_at')
     else:
-        now = timezone.now()
-        matches = qs.filter(
-            Q(status__in=LIVE_STATUSES) | Q(kickoff_at__gte=now)
+        # Tampilan awal tetap seperti dulu: yang lagi jalan dan yang akan datang.
+        qs = qs.filter(
+            Q(status__in=LIVE_STATUSES) | Q(kickoff_at__gte=timezone.now())
         ).order_by('kickoff_at')
 
-    matches = [annotate_result(m) for m in matches]
+    halaman = Paginator(qs, PER_HALAMAN).get_page(request.GET.get('hal'))
+    matches = [annotate_result(m) for m in halaman.object_list]
 
     return render(
         request,
         'dashboard/schedule.html',
-        {'active_nav': 'schedule', 'matches': matches, 'show_all': show_all},
+        {
+            'active_nav': 'schedule',
+            'matches': matches,
+            'halaman': halaman,
+            'menyaring': menyaring,
+            'musim_aktif': musim,
+            'kompetisi_aktif': kompetisi,
+            'musim_tersedia': musim_tersedia,
+            'kategori_tersedia': kategori_tersedia,
+            'total': halaman.paginator.count,
+        },
     )
 
 

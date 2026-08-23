@@ -3,17 +3,41 @@
 {% block title %}Jadwal — MU Analytics{% endblock %}
 
 {% block content %}
-<div class="mb-6 flex items-center justify-between">
+<div class="mb-4 flex items-start justify-between gap-4">
   <div>
     <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Jadwal</h1>
     <p class="text-sm text-gray-500">
-      {% if show_all %}Semua pertandingan, terbaru dulu{% else %}Pertandingan live &amp; mendatang{% endif %}
+      {% if menyaring %}{{ total }} pertandingan, terbaru dulu{% else %}Pertandingan live &amp; mendatang{% endif %}
     </p>
   </div>
-  <a href="?{% if not show_all %}all=1{% endif %}" class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white">
-    {% if show_all %}Lihat mendatang saja{% else %}Lihat semua histori{% endif %}
+  <a href="{% if menyaring %}?{% else %}?all=1{% endif %}" class="shrink-0 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white">
+    {% if menyaring %}Lihat mendatang saja{% else %}Lihat semua histori{% endif %}
   </a>
 </div>
+
+{% if menyaring %}
+<div class="mb-6 flex flex-col gap-3">
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="w-16 shrink-0 text-xs uppercase tracking-wide text-gray-600">Musim</span>
+    <a href="?all=1{% if kompetisi_aktif %}&amp;kompetisi={{ kompetisi_aktif }}{% endif %}"
+       class="rounded-full border px-3 py-1 text-xs font-medium {% if not musim_aktif %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">Semua</a>
+    {% for m in musim_tersedia %}
+    <a href="?musim={{ m }}{% if kompetisi_aktif %}&amp;kompetisi={{ kompetisi_aktif }}{% endif %}"
+       class="rounded-full border px-3 py-1 text-xs font-medium {% if musim_aktif == m|stringformat:'s' %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">{{ m }}/{{ m|add:1 }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="w-16 shrink-0 text-xs uppercase tracking-wide text-gray-600">Ajang</span>
+    <a href="?all=1{% if musim_aktif %}&amp;musim={{ musim_aktif }}{% endif %}"
+       class="rounded-full border px-3 py-1 text-xs font-medium {% if not kompetisi_aktif %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">Semua</a>
+    {% for k in kategori_tersedia %}
+    <a href="?kompetisi={{ k.kunci }}{% if musim_aktif %}&amp;musim={{ musim_aktif }}{% endif %}"
+       class="rounded-full border px-3 py-1 text-xs font-medium {% if kompetisi_aktif == k.kunci %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">{{ k.label }} <span class="text-gray-600">{{ k.jumlah }}</span></a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 {% if matches %}
 <ul class="flex flex-col gap-3">
@@ -42,7 +66,24 @@
   </li>
   {% endfor %}
 </ul>
+{% if halaman.has_other_pages %}
+<div class="mt-6 flex items-center justify-between text-xs">
+  <span class="text-gray-600">Halaman {{ halaman.number }} dari {{ halaman.paginator.num_pages }}</span>
+  <div class="flex gap-2">
+    {% if halaman.has_previous %}
+    <a href="?hal={{ halaman.previous_page_number }}{% if musim_aktif %}&amp;musim={{ musim_aktif }}{% endif %}{% if kompetisi_aktif %}&amp;kompetisi={{ kompetisi_aktif }}{% endif %}{% if not musim_aktif and not kompetisi_aktif %}&amp;all=1{% endif %}"
+       class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 font-medium text-gray-400 hover:text-white">Sebelumnya</a>
+    {% endif %}
+    {% if halaman.has_next %}
+    <a href="?hal={{ halaman.next_page_number }}{% if musim_aktif %}&amp;musim={{ musim_aktif }}{% endif %}{% if kompetisi_aktif %}&amp;kompetisi={{ kompetisi_aktif }}{% endif %}{% if not musim_aktif and not kompetisi_aktif %}&amp;all=1{% endif %}"
+       class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 font-medium text-gray-400 hover:text-white">Berikutnya</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 {% else %}
-<p class="card p-6 text-sm text-gray-500">Belum ada data jadwal.</p>
+<p class="card p-6 text-sm text-gray-500">
+  {% if menyaring %}Nggak ada pertandingan yang cocok sama filter ini.{% else %}Belum ada data jadwal.{% endif %}
+</p>
 {% endif %}
 {% endblock %}
