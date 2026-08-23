@@ -952,6 +952,9 @@ mungkin untuk tim yang benar-benar bermain.
 
 ### 18.8 Yang masih menggantung
 
+- ~~**Backup off-server**~~ — **SELESAI 23 Agu 2026.** Lihat 18.9.
+
+<!-- catatan lama, disimpan karena isinya jebakan yang masih berlaku -->
 - **Backup off-server — separuh jalan.** `scripts/backup-db.sh` sudah jadi dan
   terpasang di cron (03:30 WIB), `rclone v1.75.0` terpasang di `~/bin/rclone`
   (checksum diverifikasi terhadap SHA256SUMS resmi). Dump harian jalan dan
@@ -992,3 +995,81 @@ mungkin untuk tim yang benar-benar bermain.
   besar hasil backfill belum bisa dijangkau lewat UI.
 - Halaman Statistik masih terblokir: `passes_total` dan field progresif tidak
   ada di skema, `shots_faced` nol di musim 2025 dan 2026.
+
+
+---
+
+## 19. Backup off-server ke Google Drive
+
+Selesai 23 Agustus 2026. Rantainya: `pg_dump` → rotasi lokal → `rclone` →
+Google Drive, tiap hari 03:30 WIB lewat cron.
+
+### 19.1 Bentuknya
+
+- `rclone v1.75.0` di `~/bin/rclone`, checksum diverifikasi terhadap
+  `SHA256SUMS` resmi sebelum dijalankan.
+- Remote `gdrive:` dengan scope **`drive.file`** — rclone hanya bisa menyentuh
+  file yang ia buat sendiri, sisa isi Drive tidak terlihat olehnya.
+- Client OAuth **milik sendiri**, bukan client_id bersama milik rclone. Ini
+  bukan kemewahan: rclone memperingatkan client_id bersamanya pensiun "selama
+  2026", dan saat ini dipasang sudah Agustus 2026. Backup adalah tempat paling
+  buruk untuk menyimpan tanggal kedaluwarsa yang sudah diketahui.
+- Consent screen di-**publish ke Production**. Kalau ditinggal di *Testing*,
+  refresh token Google kedaluwarsa tiap 7 hari dan backup putus tiap minggu —
+  diam-diam, karena yang gagal cuma satu baris di `cron.log`.
+- Retensi: 3 salinan lokal, 14 hari di Drive.
+- Kredensial tidak pernah lewat agen: token dibuat pemilik akun lewat
+  `rclone authorize` di mesinnya sendiri, ditempel langsung ke prompt server.
+
+### 19.2 Empat jebakan waktu menulis skripnya
+
+Semuanya khas host ini dan semuanya sudah menggigit sekali:
+
+1. **`eval` untuk membaca `.env` mencetak password ke log.** Password produksi
+   mengandung karakter khusus; `eval` menafsirkan potongannya sebagai nama
+   variabel, skrip mati dengan `unbound variable`, dan potongan password itu
+   ikut tercetak. Diganti `printf -v`, yang menugaskan nilai tanpa pernah
+   menafsirkannya sebagai kode.
+2. **Tidak ada `/dev/fd`.** Process substitution (`< <(grep ...)`) mati dengan
+   `No such file or directory`. `.env` dibaca langsung `< .env`, disaring
+   `case` di dalam loop.
+3. **Rotasi lokal harus mendahului urusan remote.** Versi pertama merotasi di
+   akhir, jadi selama Drive belum tersambung skrip berhenti duluan dan dump
+   16 MB/hari menumpuk sampai kuota habis.
+4. **`/tmp` di-mount `noexec`.** Skrip di sana gagal dengan `Permission denied`
+   yang menyesatkan. Semua skrip tinggal di `~/mu-analytics/scripts/`.
+
+### 19.3 Sejauh apa restore-nya benar-benar diuji
+
+Ini penting dicatat jujur, karena "backup berhasil" sering berarti "file
+terunggah" dan bukan "data bisa kembali".
+
+Yang **sudah** dibuktikan, dengan file diunduh ULANG dari Drive (bukan salinan
+lokal):
+
+- SHA256 identik dengan dump di server — file utuh, tidak terpotong.
+- Arsipnya valid: 29 tabel, 139 index/constraint terbaca `pg_restore --list`.
+- Datanya benar-benar terbaca dan cocok jumlahnya dengan produksi:
+
+  | tabel | produksi | dari dump Drive |
+  |---|---|---|
+  | `matches_match` | 817 | 817 |
+  | `matches_playermatchstatistics` | 27.731 | 27.731 |
+  | `matches_matchplay` | 31.073 | 31.073 |
+  | `matches_matchshot` | 9.700 | 9.700 |
+  | `players_player` | 3.137 | 3.137 |
+  | `players_team` | 89 | 89 |
+
+Yang **belum** dibuktikan: restore penuh ke database hidup. Hosting ini
+menolak `createdb` dari command line (`no pg_hba.conf entry ... database
+template1`) — database hanya bisa dibuat lewat UI cPanel. Jadi kalau suatu
+saat benar-benar perlu memulihkan, langkah pertamanya bikin database baru
+lewat cPanel, lalu:
+
+```bash
+pg_restore -h localhost -U <user> -d <db_baru> --no-owner --no-privileges <file.dump>
+```
+
+Catatan kecil: `rclone config userinfo` tidak jalan dengan scope `drive.file`
+(tidak ada akses ke profil akun). Verifikasi "akunnya benar" dilakukan dengan
+melihat file muncul di Drive akun yang dimaksud, bukan lewat perintah.

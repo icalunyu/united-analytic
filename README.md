@@ -180,6 +180,26 @@ Server ini (DomaiNesia, `musafar.web.id`) udah pernah dipakai buat deploy app Dj
    Selalu verifikasi kode yang di server benar-benar berubah (mis. `grep` baris yang baru), jangan percaya "deploy sukses" begitu saja.
 6. **Cron Job** (cPanel) — jadwalkan `pull_fixtures_fd`/`pull_match_events_espn`/dkk berkala (tiap beberapa menit pas matchday, harian di luar itu) supaya data nggak statis dan hemat kuota API.
 
+## Backup
+
+`scripts/backup-db.sh` jalan tiap hari 03:30 WIB lewat cron: `pg_dump` →
+rotasi 3 salinan lokal di `backups/` → unggah ke Google Drive lewat `rclone`,
+lalu **verifikasi filenya benar-benar ada di sana** sebelum melapor sukses.
+Retensi di Drive 14 hari.
+
+Scope Drive-nya `drive.file` — rclone cuma bisa nyentuh file yang dia bikin
+sendiri. Kredensial OAuth dibikin lewat `rclone config` sama pemilik akun,
+nggak pernah lewat kode atau chat.
+
+Kalau perlu restore: bikin database baru lewat cPanel (hosting ini nolak
+`createdb` dari command line), lalu
+
+```bash
+pg_restore -h localhost -U <user> -d <db_baru> --no-owner --no-privileges <file.dump>
+```
+
+Detail lengkap + jebakannya ada di [CATATAN-PERUBAHAN-BESAR.md](CATATAN-PERUBAHAN-BESAR.md) bagian 19.
+
 ## Kredensial
 
 Semua API key & DB password diisi manual lewat file `.env` (lokal) atau `SetEnv` di cPanel (server) — tidak pernah di-hardcode di kode atau diminta lewat chat/AI.
