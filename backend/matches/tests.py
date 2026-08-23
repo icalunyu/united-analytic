@@ -742,3 +742,123 @@ class EspnPenyaringInkrementalTests(TestCase):
         self._catat_ingest()
         for value in (999999, None, 'bukan-angka', ''):
             self.assertFalse(self.Command._already_final(value))
+
+
+class EspnRetryTests(SimpleTestCase):
+    """Percobaan ulang di klien ESPN.
+
+    ESPN itu sumber paling rapuh (API tidak resmi) tapi dulu justru satu-satunya
+    yang tanpa retry sama sekali. Log cron mencatat 7 kegagalan jaringan dalam
+    6 hari: read timeout dan connection reset — dua-duanya sementara.
+    """
+
+    class SesiPalsu:
+        """Sesi tiruan yang memutar daftar hasil: exception atau response."""
+
+        def __init__(self, hasil):
+            self.hasil = list(hasil)
+            self.panggilan = 0
+            self.headers = {}
+
+        def get(self, url, params=None, timeout=None):
+            self.panggilan += 1
+            item = self.hasil.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+    class ResponsPalsu:
+        def __init__(self, status=200, payload=None):
+            self.status_code = status
+            self._payload = payload if payload is not None else {'events': []}
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            import requests
+
+            if self.status_code >= 400:
+                raise requests.HTTPError(f'HTTP {self.status_code}')
+
+    def _klien(self, hasil, **kw):
+        from unittest.mock import patch
+
+        from matches.services.espn import EspnClient
+
+        sesi = self.SesiPalsu(hasil)
+        with patch('time.sleep'):  # jangan beneran nunggu waktu tes
+            klien = EspnClient(session=sesi, **kw)
+            return klien, sesi
+
+    def test_timeout_dicoba_ulang_lalu_berhasil(self):
+        import requests
+
+        from unittest.mock import patch
+
+        klien, sesi = self._klien(
+            [requests.Timeout('read timeout=15'), self.ResponsPalsu(payload={'ok': 1})]
+        )
+        with patch('time.sleep'):
+            hasil = klien._get('eng.1', 'scoreboard')
+        self.assertEqual(hasil, {'ok': 1})
+        self.assertEqual(sesi.panggilan, 2)
+        self.assertEqual(klien.retry_count, 1)
+
+    def test_koneksi_putus_dicoba_ulang(self):
+        import requests
+
+        from unittest.mock import patch
+
+        klien, sesi = self._klien(
+            [
+                requests.ConnectionError('Connection reset by peer'),
+                requests.ConnectionError('Connection reset by peer'),
+                self.ResponsPalsu(payload={'ok': 2}),
+            ]
+        )
+        with patch('time.sleep'):
+            self.assertEqual(klien._get('eng.1', 'scoreboard'), {'ok': 2})
+        self.assertEqual(sesi.panggilan, 3)
+
+    def test_nyerah_setelah_batas_dan_sebut_penyebabnya(self):
+        import requests
+
+        from unittest.mock import patch
+
+        from matches.services.espn import EspnError
+
+        klien, sesi = self._klien([requests.Timeout('timeout')] * 3)
+        with patch('time.sleep'), self.assertRaises(EspnError) as ctx:
+            klien._get('eng.1', 'scoreboard')
+        self.assertEqual(sesi.panggilan, 3, 'harus 1 percobaan + 2 ulangan')
+        self.assertIn('3 percobaan', str(ctx.exception))
+
+    def test_404_TIDAK_dicoba_ulang(self):
+        """Error klien nggak akan berubah karena diulang — cuma buang waktu
+        dan nambah tekanan ke API yang nggak resmi."""
+        from unittest.mock import patch
+
+        from matches.services.espn import EspnError
+
+        klien, sesi = self._klien([self.ResponsPalsu(status=404)])
+        with patch('time.sleep'), self.assertRaises(EspnError):
+            klien._get('eng.1', 'scoreboard')
+        self.assertEqual(sesi.panggilan, 1)
+
+    def test_503_dicoba_ulang(self):
+        from unittest.mock import patch
+
+        klien, sesi = self._klien(
+            [self.ResponsPalsu(status=503), self.ResponsPalsu(payload={'ok': 3})]
+        )
+        with patch('time.sleep'):
+            self.assertEqual(klien._get('eng.1', 'scoreboard'), {'ok': 3})
+        self.assertEqual(sesi.panggilan, 2)
+
+    def test_user_agent_menyebut_identitas_bukan_nyamar_browser(self):
+        klien, sesi = self._klien([self.ResponsPalsu()])
+        ua = sesi.headers.get('User-Agent', '')
+        self.assertIn('MU-Analytics', ua)
+        for browser in ('Mozilla', 'Chrome', 'Safari', 'AppleWebKit'):
+            self.assertNotIn(browser, ua, 'jangan menyamar jadi browser')
