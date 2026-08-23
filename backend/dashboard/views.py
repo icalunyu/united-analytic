@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 
 from matches import competitions
-from matches.models import Match, MatchEvent
+from matches.models import Match, MatchEvent, PlayerMatchStatistics
 from matches.momentum import build_momentum
 from players.models import Injury, Player
 
@@ -407,4 +407,187 @@ def injuries(request):
     )
     return render(
         request, 'dashboard/injuries.html', {'active_nav': 'injuries', 'injuries': injury_qs[:40]}
+    )
+
+
+# ---------------------------------------------------------------- statistik
+
+# Kolom tabel Statistik. `kunci` dipakai di URL buat sortir, `label` di header.
+# `per90` menandai kolom yang dibagi menit — lihat catatan bias di
+# `_agregat_pemain`.
+KOLOM_STATISTIK = [
+    {'kunci': 'nama', 'label': 'Pemain', 'per90': False, 'angka': False},
+    {'kunci': 'pos', 'label': 'Pos', 'per90': False, 'angka': False},
+    {'kunci': 'menit', 'label': 'Min', 'per90': False, 'angka': True},
+    {'kunci': 'gol', 'label': 'G', 'per90': False, 'angka': True},
+    {'kunci': 'assist', 'label': 'A', 'per90': False, 'angka': True},
+    {'kunci': 'xg', 'label': 'xG', 'per90': False, 'angka': True},
+    {'kunci': 'xa', 'label': 'xA', 'per90': False, 'angka': True},
+    # Handoff minta 'Prog/90'. Metrik progresif TIDAK ADA di FotMob, Understat,
+    # maupun ESPN — nol kemunculan 'prog'/'carries' di seluruh payload. Yang
+    # paling dekat dan memang tersimpan adalah umpan ke sepertiga akhir, tapi
+    # itu metrik BERBEDA dan labelnya harus jujur menyebut begitu.
+    {'kunci': 'final3', 'label': '1/3 Akhir/90', 'per90': True, 'angka': True},
+    {'kunci': 'umpan', 'label': 'Umpan%', 'per90': False, 'angka': True},
+    {'kunci': 'intersep', 'label': 'Int/90', 'per90': True, 'angka': True},
+    {'kunci': 'sv', 'label': 'Sv%', 'per90': False, 'angka': True},
+]
+
+# Handoff cuma minta dua chip musim: 2026/27 dan 2025/26.
+MUSIM_STATISTIK = 2
+
+# Menit minimum sebelum kolom per-90 ditampilkan. Di bawah ini penyebutnya
+# terlalu kecil: 1 intersep dalam 8 menit jadi 11,3 per 90 dan langsung
+# menclok di puncak tabel.
+MENIT_MINIMUM_PER90 = 90
+
+
+def _agregat_pemain(rows):
+    """Ringkas baris per-laga jadi satu baris per pemain.
+
+    **Penyebut per-90 sengaja BUKAN total menit pemain.** Di musim 2025 cuma
+    566 dari 850 baris punya `minutes_played`, dan baris yang punya menit belum
+    tentu sama dengan baris yang punya `interceptions`. Kalau totalnya dibagi
+    total menit, tiap pemain kena bias yang BESARNYA BEDA-BEDA tergantung
+    seberapa bolong datanya — dan yang rusak bukan skala kolomnya, tapi URUTAN
+    SORTIR, justru fitur utama halaman ini.
+
+    Jadi tiap metrik per-90 memakai menit dari laga yang metrik itu ADA.
+    Konsekuensinya kolom Min (total) dan penyebut per-90 bisa berbeda, dan itu
+    memang benar — keterangan di halaman menyebutkannya.
+    """
+    per_pemain = {}
+    for r in rows:
+        d = per_pemain.setdefault(
+            r.player_id,
+            {
+                'player': r.player,
+                'menit': 0, 'gol': 0, 'assist': 0,
+                'xg': 0.0, 'xa': 0.0,
+                'final3': 0, 'final3_menit': 0,
+                'intersep': 0, 'intersep_menit': 0,
+                'umpan_akurat': 0, 'umpan_total': 0,
+                'saves': 0, 'kebobolan': 0, 'ada_kiper': False,
+                'laga': 0,
+            },
+        )
+        menit = r.minutes_played or 0
+        d['menit'] += menit
+        d['laga'] += 1
+        d['gol'] += r.goals or 0
+        d['assist'] += r.assists or 0
+        d['xg'] += r.xg or 0.0
+        d['xa'] += r.xa or 0.0
+        if r.passes_into_final_third is not None:
+            d['final3'] += r.passes_into_final_third
+            d['final3_menit'] += menit
+        if r.interceptions is not None:
+            d['intersep'] += r.interceptions
+            d['intersep_menit'] += menit
+        if r.passes_total:
+            d['umpan_akurat'] += r.passes_accurate or 0
+            d['umpan_total'] += r.passes_total
+        if r.saves is not None or r.goals_conceded is not None:
+            d['saves'] += r.saves or 0
+            d['kebobolan'] += r.goals_conceded or 0
+            d['ada_kiper'] = True
+    return per_pemain
+
+
+def _per90(total, menit):
+    if not menit or menit < MENIT_MINIMUM_PER90:
+        return None
+    return round(total / menit * 90, 2)
+
+
+def statistics(request):
+    """Basis data pemain: filter musim & kompetisi, kolom bisa disortir."""
+    musim_tersedia = sorted(
+        {
+            s
+            for s in Match.objects.filter(
+                Q(home_team__is_manchester_united=True)
+                | Q(away_team__is_manchester_united=True)
+            ).values_list('season', flat=True)
+            if s
+        },
+        reverse=True,
+    )[:MUSIM_STATISTIK]
+
+    musim = request.GET.get('musim')
+    musim_aktif = int(musim) if musim and musim.isdigit() and int(musim) in musim_tersedia \
+        else (musim_tersedia[0] if musim_tersedia else None)
+
+    kompetisi = request.GET.get('kompetisi') or ''
+    urut = request.GET.get('urut') or 'menit'
+    naik = request.GET.get('arah') == 'naik'
+
+    rows = (
+        PlayerMatchStatistics.objects.filter(
+            team__is_manchester_united=True, match__season=musim_aktif
+        )
+        .select_related('player')
+    )
+    if kompetisi in competitions.LABELS:
+        rows = rows.filter(match__league_name__in=competitions.league_names_for(kompetisi))
+
+    agregat = _agregat_pemain(rows)
+
+    baris = []
+    for d in agregat.values():
+        baris.append({
+            'nama': d['player'].name,
+            'pos': d['player'].position or '-',
+            'laga': d['laga'],
+            'menit': d['menit'],
+            'gol': d['gol'],
+            'assist': d['assist'],
+            'xg': round(d['xg'], 2) if d['xg'] else None,
+            'xa': round(d['xa'], 2) if d['xa'] else None,
+            'final3': _per90(d['final3'], d['final3_menit']),
+            'umpan': (
+                round(d['umpan_akurat'] / d['umpan_total'] * 100, 1)
+                if d['umpan_total'] else None
+            ),
+            'intersep': _per90(d['intersep'], d['intersep_menit']),
+            'sv': (
+                round(d['saves'] / (d['saves'] + d['kebobolan']) * 100, 1)
+                if d['ada_kiper'] and (d['saves'] + d['kebobolan']) else None
+            ),
+        })
+
+    # "Baris tanpa data SELALU di bawah, di kedua arah" — handoff. Ini nggak
+    # bisa dicapai satu ORDER BY: kalau None ikut disortir, membalik arah bakal
+    # melempar mereka ke atas. Jadi yang kosong dipisah DULU, yang berisi
+    # disortir, lalu yang kosong ditempel di belakang — apa pun arahnya.
+    if urut not in {k['kunci'] for k in KOLOM_STATISTIK}:
+        urut = 'menit'
+    berisi = [b for b in baris if b.get(urut) is not None]
+    kosong = [b for b in baris if b.get(urut) is None]
+    berisi.sort(
+        key=lambda b: b[urut].lower() if isinstance(b[urut], str) else b[urut],
+        reverse=not naik,
+    )
+    kosong.sort(key=lambda b: b['nama'].lower())
+    baris = berisi + kosong
+
+    return render(
+        request,
+        'dashboard/statistics.html',
+        {
+            'active_nav': 'statistics',
+            'kolom': KOLOM_STATISTIK,
+            'baris': baris,
+            'musim_tersedia': musim_tersedia,
+            'musim_aktif': musim_aktif,
+            'kompetisi_aktif': kompetisi,
+            'kategori': [
+                {'kunci': k, 'label': competitions.LABELS[k]}
+                for k in competitions.ORDER
+                if k != 'lainnya'
+            ],
+            'urut': urut,
+            'naik': naik,
+            'menit_minimum': MENIT_MINIMUM_PER90,
+        },
     )

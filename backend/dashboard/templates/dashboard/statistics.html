@@ -1,0 +1,85 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Statistik — MU Analytics{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Statistik</h1>
+    <p class="text-sm text-gray-500">{{ baris|length }} pemain · musim {{ musim_aktif }}/{{ musim_aktif|add:1 }}</p>
+  </div>
+  <div class="max-w-sm text-right text-xs leading-relaxed text-gray-500">
+    <span class="text-gray-400">Min, G, A, xG, xA</span> itu <b>total</b>;
+    <span class="text-gray-400">1/3 Akhir/90</span> dan <span class="text-gray-400">Int/90</span>
+    <b>per 90 menit</b>; <span class="text-gray-400">Umpan%</span> dan
+    <span class="text-gray-400">Sv%</span> <b>persentase</b>.
+    Kolom per-90 kosong di bawah {{ menit_minimum }} menit.
+  </div>
+</div>
+
+<div class="mb-4 flex flex-col gap-2">
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="w-16 shrink-0 text-xs uppercase tracking-wide text-gray-600">Musim</span>
+    {% for m in musim_tersedia %}
+    <a href="?musim={{ m }}{% if kompetisi_aktif %}&amp;kompetisi={{ kompetisi_aktif }}{% endif %}"
+       class="rounded-full border px-3 py-1 text-xs font-medium {% if musim_aktif == m %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">{{ m }}/{{ m|add:1 }}</a>
+    {% endfor %}
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="w-16 shrink-0 text-xs uppercase tracking-wide text-gray-600">Ajang</span>
+    <a href="?musim={{ musim_aktif }}"
+       class="rounded-full border px-3 py-1 text-xs font-medium {% if not kompetisi_aktif %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">Semua komp</a>
+    {% for k in kategori %}
+    <a href="?musim={{ musim_aktif }}&amp;kompetisi={{ k.kunci }}"
+       class="rounded-full border px-3 py-1 text-xs font-medium {% if kompetisi_aktif == k.kunci %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">{{ k.label }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if baris %}
+<div class="card overflow-x-auto p-0">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-gray-500">
+        {% for k in kolom %}
+        <th class="{% if k.angka %}text-right{% else %}text-left{% endif %} px-3 py-2 font-medium">
+          <a href="?musim={{ musim_aktif }}{% if kompetisi_aktif %}&amp;kompetisi={{ kompetisi_aktif }}{% endif %}&amp;urut={{ k.kunci }}{% if urut == k.kunci and not naik %}&amp;arah=naik{% endif %}"
+             class="{% if urut == k.kunci %}text-[#F2495C]{% else %}hover:text-white{% endif %}">
+            {{ k.label }}{% if urut == k.kunci %}{% if naik %} ↑{% else %} ↓{% endif %}{% endif %}
+          </a>
+        </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in baris %}
+      <tr class="border-b border-[var(--color-border)]/50 hover:bg-white/5">
+        <td class="px-3 py-2 font-medium text-[var(--color-text-strong)]">{{ b.nama }}</td>
+        <td class="px-3 py-2 text-gray-500">{{ b.pos }}</td>
+        <td class="px-3 py-2 text-right font-mono">{{ b.menit }}</td>
+        <td class="px-3 py-2 text-right font-mono">{{ b.gol }}</td>
+        <td class="px-3 py-2 text-right font-mono">{{ b.assist }}</td>
+        <td class="px-3 py-2 text-right font-mono">{% if b.xg is not None %}{{ b.xg }}{% else %}<span class="text-gray-700">–</span>{% endif %}</td>
+        <td class="px-3 py-2 text-right font-mono">{% if b.xa is not None %}{{ b.xa }}{% else %}<span class="text-gray-700">–</span>{% endif %}</td>
+        <td class="px-3 py-2 text-right font-mono">{% if b.final3 is not None %}{{ b.final3 }}{% else %}<span class="text-gray-700">–</span>{% endif %}</td>
+        <td class="px-3 py-2 text-right font-mono">{% if b.umpan is not None %}{{ b.umpan }}%{% else %}<span class="text-gray-700">–</span>{% endif %}</td>
+        <td class="px-3 py-2 text-right font-mono">{% if b.intersep is not None %}{{ b.intersep }}{% else %}<span class="text-gray-700">–</span>{% endif %}</td>
+        <td class="px-3 py-2 text-right font-mono">{% if b.sv is not None %}{{ b.sv }}%{% else %}<span class="text-gray-700">–</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="mt-3 text-xs leading-relaxed text-gray-600">
+  <b>1/3 Akhir/90</b> itu umpan yang melintasi garis sepertiga akhir (FotMob) —
+  <b>bukan</b> umpan atau bawaan progresif. Metrik progresif tidak tersedia di
+  FotMob, Understat, maupun ESPN, jadi kolom yang diminta desain sebagai
+  <code>Prog/90</code> diganti yang datanya benar-benar ada.<br>
+  <b>Sv%</b> dihitung dari penyelamatan ÷ (penyelamatan + kebobolan), bukan dari
+  <code>shots_faced</code> — angka itu memuat tembakan yang melenceng juga.
+</p>
+{% else %}
+<p class="card p-6 text-sm text-gray-500">Belum ada statistik buat filter ini.</p>
+{% endif %}
+{% endblock %}

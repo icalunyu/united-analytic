@@ -9,5 +9,6 @@ urlpatterns = [
     path('jadwal/', views.schedule, name='schedule'),
     path('match/<int:match_id>/', views.match_detail, name='match_detail'),
     path('skuad/', views.squad, name='squad'),
+    path('statistik/', views.statistics, name='statistics'),
     path('cedera/', views.injuries, name='injuries'),
 ]

@@ -25,6 +25,9 @@
         <a href="{% url 'dashboard:squad' %}" class="nav-link {% if active_nav == 'squad' %}active{% endif %}">
           <span>👥</span> Skuad
         </a>
+        <a href="{% url 'dashboard:statistics' %}" class="nav-link {% if active_nav == 'statistics' %}active{% endif %}">
+          <span>📊</span> Statistik
+        </a>
         <a href="{% url 'dashboard:injuries' %}" class="nav-link {% if active_nav == 'injuries' %}active{% endif %}">
           <span>🩹</span> Cedera
         </a>

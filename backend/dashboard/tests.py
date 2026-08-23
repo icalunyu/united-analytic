@@ -136,3 +136,125 @@ class JadwalFilterTests(TestCase):
         ):
             r = self.client.get(reverse('dashboard:schedule'), params)
             self.assertEqual(r.status_code, 200, params)
+
+
+class StatistikTests(TestCase):
+    """Halaman Statistik — Tahap 2 handoff.
+
+    Kriteria selesai dari handoff: *"filter musim dan kompetisi menghasilkan
+    angka yang cocok dengan hitungan manual dari data laga."* Test di kelas ini
+    yang membuktikannya.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from datetime import timedelta
+
+        from matches.models import PlayerMatchStatistics
+        from players.models import Player
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        cls.lawan = Team.objects.create(name='Ipswich')
+        cls.p1 = Player.objects.create(name='Bruno Fernandes', team=cls.mu, position='CM')
+        cls.p2 = Player.objects.create(name='Senne Lammens', team=cls.mu, position='GK')
+        now = timezone.now()
+
+        def laga(hari, season, liga):
+            return Match.objects.create(
+                home_team=cls.mu, away_team=cls.lawan,
+                kickoff_at=now - timedelta(days=hari),
+                season=season, league_name=liga, status=Match.Status.FINISHED,
+            )
+
+        cls.liga1 = laga(10, 2026, '2026-27 English Premier League')
+        cls.liga2 = laga(20, 2026, '2026-27 English Premier League')
+        cls.piala = laga(30, 2026, '2026-27 English FA Cup')
+        cls.musim_lalu = laga(400, 2025, '2025-26 English Premier League')
+
+        # Bruno: 90+90 menit di liga, 45 di piala.
+        for m, menit, gol in ((cls.liga1, 90, 1), (cls.liga2, 90, 2), (cls.piala, 45, 0)):
+            PlayerMatchStatistics.objects.create(
+                match=m, player=cls.p1, team=cls.mu, minutes_played=menit, goals=gol,
+                assists=1, interceptions=2, passes_accurate=45, passes_total=50,
+                passes_into_final_third=6,
+            )
+        PlayerMatchStatistics.objects.create(
+            match=cls.musim_lalu, player=cls.p1, team=cls.mu, minutes_played=90, goals=9,
+        )
+        # Lammens: kiper.
+        PlayerMatchStatistics.objects.create(
+            match=cls.liga1, player=cls.p2, team=cls.mu, minutes_played=90,
+            saves=3, goals_conceded=1,
+        )
+
+    def _baris(self, **params):
+        r = self.client.get(reverse('dashboard:statistics'), params)
+        self.assertEqual(r.status_code, 200)
+        return {b['nama']: b for b in r.context['baris']}, r
+
+    def test_agregat_cocok_dengan_hitungan_manual(self):
+        """Kriteria selesai handoff. Bruno: 90+90+45 = 225 menit, 1+2+0 = 3 gol."""
+        baris, _ = self._baris(musim=2026)
+        bruno = baris['Bruno Fernandes']
+        self.assertEqual(bruno['menit'], 225)
+        self.assertEqual(bruno['gol'], 3)
+        self.assertEqual(bruno['assist'], 3)
+
+    def test_filter_kompetisi_mengubah_angka(self):
+        """Handoff: 'Menit dan angka total ikut menyesuaikan.'"""
+        liga, _ = self._baris(musim=2026, kompetisi='liga')
+        self.assertEqual(liga['Bruno Fernandes']['menit'], 180)
+        self.assertEqual(liga['Bruno Fernandes']['gol'], 3)
+
+        piala, _ = self._baris(musim=2026, kompetisi='piala')
+        self.assertEqual(piala['Bruno Fernandes']['menit'], 45)
+        self.assertEqual(piala['Bruno Fernandes']['gol'], 0)
+
+    def test_filter_musim_memisahkan_data(self):
+        baris, _ = self._baris(musim=2025)
+        self.assertEqual(baris['Bruno Fernandes']['gol'], 9)
+        self.assertNotIn('Senne Lammens', baris)
+
+    def test_per90_dihitung_dari_menit_laga_yang_punya_metriknya(self):
+        """Bruno: 2 intersep x 3 laga = 6, menit yang punya intersep = 225.
+        6 / 225 * 90 = 2.4"""
+        baris, _ = self._baris(musim=2026)
+        self.assertEqual(baris['Bruno Fernandes']['intersep'], 2.4)
+
+    def test_umpan_persen_dari_akurat_dibagi_total(self):
+        """45x3 = 135 akurat dari 50x3 = 150 total -> 90%."""
+        baris, _ = self._baris(musim=2026)
+        self.assertEqual(baris['Bruno Fernandes']['umpan'], 90.0)
+
+    def test_sv_persen_cuma_buat_kiper(self):
+        baris, _ = self._baris(musim=2026)
+        self.assertEqual(baris['Senne Lammens']['sv'], 75.0)
+        self.assertIsNone(baris['Bruno Fernandes']['sv'])
+
+    def test_baris_tanpa_data_selalu_di_bawah_di_KEDUA_arah(self):
+        """Aturan eksplisit handoff. Nggak bisa dicapai ORDER BY biasa."""
+        for arah in ('', 'naik'):
+            r = self.client.get(
+                reverse('dashboard:statistics'),
+                {'musim': 2026, 'urut': 'sv', 'arah': arah},
+            )
+            nilai = [b['sv'] for b in r.context['baris']]
+            kosong_mulai = next(
+                (i for i, v in enumerate(nilai) if v is None), len(nilai)
+            )
+            self.assertTrue(
+                all(v is None for v in nilai[kosong_mulai:]),
+                f'arah={arah!r}: baris kosong harus mengumpul di bawah, dapat {nilai}',
+            )
+
+    def test_cuma_dua_chip_musim(self):
+        """Handoff cuma minta 2026/27 dan 2025/26."""
+        _, r = self._baris()
+        self.assertEqual(len(r.context['musim_tersedia']), 2)
+
+    def test_parameter_ngawur_nggak_bikin_error(self):
+        for params in ({'musim': 'xx'}, {'urut': 'kolom-khayalan'},
+                       {'kompetisi': 'zzz'}, {'musim': '1999'}):
+            self.assertEqual(
+                self.client.get(reverse('dashboard:statistics'), params).status_code, 200
+            )
