@@ -1048,3 +1048,33 @@ class PrediksiSusunanTests(TestCase):
         p = predict_xi(self.mu, timezone.now())
         ids = [s['player'].pk for s in p['slots'] if s['player']]
         self.assertEqual(len(ids), len(set(ids)))
+
+
+class SnapshotPropertyTests(TestCase):
+    """`before_kickoff` dan `lead_time` itu PROPERTY, bukan method.
+
+    Regresi: command sempat memanggilnya dengan tanda kurung dan mati
+    `TypeError: 'datetime.timedelta' object is not callable` — tapi baru di
+    baris pesan sukses, SESUDAH snapshot-nya terlanjur tertulis. Jadi
+    perintahnya kelihatan gagal padahal datanya masuk.
+    """
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from matches.models import PredictionSnapshot
+
+        mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        lawan = Team.objects.create(name='Ipswich')
+        self.match = Match.objects.create(
+            home_team=mu, away_team=lawan, kickoff_at=timezone.now() + timedelta(days=7)
+        )
+        self.snapshot = PredictionSnapshot.objects.create(match=self.match)
+
+    def test_property_bukan_method(self):
+        self.assertIsInstance(self.snapshot.before_kickoff, bool)
+        self.assertTrue(self.snapshot.before_kickoff)
+        self.assertGreater(self.snapshot.lead_time.total_seconds(), 0)
+
+    def test_prediction_before_kickoff_menemukan_snapshot(self):
+        self.assertEqual(self.match.prediction_before_kickoff(), self.snapshot)

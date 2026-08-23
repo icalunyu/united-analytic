@@ -71,7 +71,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f'\nSnapshot #{snapshot.pk} dibuat {snapshot.created_at:%d %b %Y %H:%M}, '
-                f'{snapshot.lead_time()} sebelum kick-off.'
+                f'{snapshot.lead_time} sebelum kick-off.'
             )
         )
 
