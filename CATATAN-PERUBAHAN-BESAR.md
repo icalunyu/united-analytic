@@ -1073,3 +1073,119 @@ pg_restore -h localhost -U <user> -d <db_baru> --no-owner --no-privileges <file.
 Catatan kecil: `rclone config userinfo` tidak jalan dengan scope `drive.file`
 (tidak ada akses ke profil akun). Verifikasi "akunnya benar" dilakukan dengan
 melihat file muncul di Drive akun yang dimaksud, bukan lewat perintah.
+
+
+---
+
+## 20. Sesi 23 Agustus (lanjutan): lima pekerjaan
+
+Dipetakan lebih dulu oleh lima penyelidik paralel + satu pemeriksa silang.
+Pemeriksaan silang itu yang paling berharga — ia menemukan dua hal yang akan
+menggigit kalau langsung dikerjakan.
+
+### 20.1 Urutan pengerjaan ternyata bukan preferensi
+
+Rencana awal: kerjakan retensi `RawPayload` kapan saja. Pemeriksa silang
+menunjukkan itu salah: **penyaring inkremental ESPN menghapus ~744 penulisan
+ulang `RawPayload` per hari**, sehingga justifikasi utama field
+`payload_sha256` (menghindari menimpa payload identik) hilang begitu penyaring
+mendarat. Migrasi yang hampir ditulis itu akan membeli mendekati nol.
+Urutannya jadi wajib: ingest dulu, ukur ulang, baru putuskan.
+
+### 20.2 Penyaring yang salah tempat membekukan laga live — diam
+
+`resolve_match` memakai `Match.objects.filter(...).update(**defaults)` yang
+menimpa `status`. Kalau penyaring "sudah pernah ditarik" ditaruh sesudah laga
+disimpan, laga yang ditarik saat masih jalan akan dilewati **selamanya** dan
+datanya beku di potret menit-60.
+
+Syaratnya jadi dua, dan yang kedua yang menyelamatkan: status **di DB** sudah
+final DAN sudah ada `MatchIngest`. Status dibaca dari baris LAMA, bukan dari
+payload yang baru datang — laga live tetap dapat `MatchIngest`, jadi kalau
+syaratnya cuma "pernah ditarik", pembekuan itu terjadi.
+
+Ini diuji dengan sengaja membuatnya salah: pengecekan status dilepas, dua test
+langsung merah (laga live dan laga tertunda), lalu dikembalikan. Unit test yang
+cuma memanggil `_already_final` tetap hijau walau penyaringnya salah tempat —
+itu sifat test-nya, bukan retorika.
+
+Hasil nyata: 8 dari 8 fixture dilewati, waktu jalan **90 detik → 9 detik**,
+~670 panggilan ESPN hilang per hari.
+
+### 20.3 Alarm palsu yang sudah menyala
+
+`pull_match_events_pl` tidak pernah menulis `MatchIngest`, sementara
+`source_health.py` melacak `PREMIER_LEAGUE` dengan ambang (26, 72) jam yang
+dibaca dari tabel itu. Nol baris = umur tak hingga = kartu Kesehatan Sumber
+memajang "berhenti" untuk feed yang jalan tiap malam. Persis kelas kegagalan
+yang jadi tema bagian 17.
+
+### 20.4 Jadwal: jebakan GROUP BY
+
+`Match.Meta` punya `ordering = ['kickoff_at']`, dan Django menyeret kolom
+ordering ke `GROUP BY`. Query facet tanpa `.order_by()` kosong mengembalikan
+**288 baris** (satu per kickoff unik), bukan 8. Ada test yang menjaganya.
+
+Pengelompokan 44 nama liga mentah jadi empat kategori dibuat sebagai fungsi
+murni di `matches/competitions.py`, **bukan** model `Competition` — model itu
+butuh migrasi, pemetaan id lintas provider, dan penggabungan laga ganda;
+halaman Jadwal tidak perlu menunggu itu.
+
+Ini juga **test view pertama** di repo ini. Seluruh 149 test sebelumnya ada di
+lapisan data, nol menyentuh view — padahal tahap berikutnya 100% kerja view.
+
+### 20.5 Prediksi susunan: yang jujur dan yang tidak
+
+Susunan starter dibaca dari `formation_x`/`formation_y` FotMob — 11 koordinat
+per laga. Field `is_starter` memang tidak ada, dan kolom `starter` yang sempat
+dicoba isinya 0 untuk semua baris.
+
+Dua aturan label salah dan ketahuan waktu diuji lintas formasi, bukan lewat
+data: lini tengah 2 pemain (double pivot 4-2-3-1) tidak tertangani sama sekali
+padahal itu kasus paling sering, dan lini tengah lebar dipetakan jadi wing-back
+di semua formasi padahal kalau lini belakang sudah berisi 4, yang lebar di
+tengah itu sayap.
+
+**Yang paling penting soal angkanya:** persentase di sini adalah *frekuensi
+historis slot*, bukan peluang pemain start. Tidak ada dasar jujur untuk
+menghitung peluang — data cedera seluruhnya `RETURNED`, rotasi/skorsing/
+transfer tidak terekam di mana pun. Menyebutnya "80% kemungkinan start" akan
+jadi angka yang meyakinkan tapi tidak berdasar, persis jenis kesalahan yang
+bikin analis berhenti percaya. Batas itu ditulis di `note` tiap snapshot.
+
+Snapshot pertama tersimpan **7 hari sebelum kick-off** untuk MU vs Ipswich.
+
+Satu bug yang layak dicatat: `before_kickoff` dan `lead_time` itu **property**,
+bukan method. Command memanggilnya dengan tanda kurung dan mati `TypeError` —
+tapi baru di baris pesan sukses, SESUDAH snapshot terlanjur tertulis. Jadi
+perintahnya kelihatan gagal padahal datanya masuk; yang menyelamatkan dari
+duplikat cuma pengecekan idempoten.
+
+### 20.6 Retensi RawPayload: alatnya dibuat, sengaja tidak dijalankan
+
+Dua asumsi awal keliru, keduanya ketahuan dari pengukuran:
+
+- Tabel ini **57 MB di disk**, bukan 158 MB. Angka `size_bytes` itu panjang
+  JSON mentah; Postgres meng-kompres JSONB lewat TOAST. Database totalnya
+  119 MB, disk server sisa 314 GB — **tidak ada krisis ruang**.
+- **Retensi berbasis umur tidak bisa dipakai.** `fetched_at` itu `auto_now`,
+  jadi mencatat penulisan terakhir, bukan penangkapan pertama. Selama ESPN
+  masih menarik ulang semuanya tiap 10 menit, tiap payload berumur nol
+  selamanya; dan sesudah penyaring inkremental dipasang, semuanya berhenti
+  diperbarui di hari yang sama sehingga seluruh tabel jatuh ke ambang umur
+  BERSAMAAN.
+
+Kebijakannya jadi yatim lalu musim. Dry run: 0 yatim, 309 payload musim
+2019–2023 memenuhi syarat. **Tidak dijalankan.** Menghapus bahan putar ulang
+lima musim untuk menyelesaikan masalah ruang yang tidak ada itu keliru, dan
+menariknya ulang butuh 309 panggilan ke API tidak resmi. Tidak masuk cron.
+
+### 20.7 Yang masih menggantung sesudah sesi ini
+
+- **Hipotesis taktik untuk laga Ipswich** — ini kerja analis, bukan app.
+  Susunannya sudah tersimpan; tiga kartu hipotesis masih kosong.
+- **`MatchIngest.rows` jadi omong kosong.** Field itu diisi total berjalan
+  seluruh run, bukan per laga, dan sesudah penyaring aktif angkanya anjlok.
+  Fungsinya justru mengendus penarikan yang "berhasil tapi kosong".
+- **Dua kosakata filter** untuk satu konsep: `MatchViewSet` (DRF) sudah punya
+  `?season=` dan `?all=true`, halaman Jadwal memakai `?musim=` dan `?all=1`.

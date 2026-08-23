@@ -68,9 +68,11 @@ Data ditarik dari 6 provider gratis yang saling melengkapi (kalau satu kena quot
 | `pull_squad_sdb` | TheSportsDB | Fallback skuad + posisi lebih presisi |
 | `pull_injuries` | Highlightly | Riwayat cedera |
 | `pull_match_events` | Highlightly | Event pertandingan (quota harian ketat) |
-| `pull_match_events_espn` | ESPN (API internal, tidak resmi) | Event + statistik pertandingan, cover 8 kompetisi (`--slug` buat pilih 1, atau semua sekaligus) |
+| `pull_match_events_espn` | ESPN (API internal, tidak resmi) | Event + statistik pertandingan, cover 8 kompetisi (`--slug` buat pilih 1, atau semua sekaligus). Laga yang udah selesai & pernah ditarik dilewati — pakai `--refresh` buat backfill |
 | `pull_match_events_pl` | Premier League resmi (PulseLive/Opta) | Event pertandingan resmi, riwayat sejak 1992/93, cuma Premier League |
 | `pull_xg_understat` | Understat | xG tiap tembakan + xG/xA/xGChain/xGBuildup & menit main per pemain. Cuma Premier League |
+| `predict_lineup` | — (baca DB) | Prediksi susunan MU buat laga berikutnya, dari susunan laga-laga sebelumnya. `--apply` buat nulis snapshot. |
+| `prune_raw_payloads` | — (baca DB) | Pangkas RawPayload yatim & musim lama. `--apply` buat beneran hapus. |
 | `pull_fotmob` | FotMob | Statistik pemain terlengkap (aksi bertahan per pemain, touches, umpan ke sepertiga akhir), statistik tim dgn umpan per paruh, shotmap + xGOT, kurva momentum |
 
 Isi API key yang mau dipake di `backend/.env` (lihat `.env.example` buat daftar lengkap variable + link daftar tiap provider).
