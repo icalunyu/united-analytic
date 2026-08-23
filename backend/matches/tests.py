@@ -862,3 +862,189 @@ class EspnRetryTests(SimpleTestCase):
         self.assertIn('MU-Analytics', ua)
         for browser in ('Mozilla', 'Chrome', 'Safari', 'AppleWebKit'):
             self.assertNotIn(browser, ua, 'jangan menyamar jadi browser')
+
+
+class FormasiDariKoordinatTests(SimpleTestCase):
+    """Pembacaan baris formasi dari koordinat FotMob.
+
+    Fungsi murni, jadi bisa dites tanpa DB sama sekali.
+    """
+
+    @staticmethod
+    def _xi(xs):
+        return [{'x': x, 'y': i * 0.09} for i, x in enumerate(xs)]
+
+    def _label(self, xs):
+        from matches.lineup_prediction import label_lines, split_lines
+
+        return label_lines(split_lines(self._xi(xs)))
+
+    def _formasi(self, xs):
+        from matches.lineup_prediction import formation_signature, split_lines
+
+        return formation_signature(split_lines(self._xi(xs)))
+
+    def test_formasi_umum_kebaca_benar(self):
+        for xs, harapan in [
+            ([0.05] + [0.25] * 4 + [0.45] * 2 + [0.65] * 3 + [0.85], '4-2-3-1'),
+            ([0.05] + [0.25] * 4 + [0.5] * 4 + [0.8] * 2, '4-4-2'),
+            ([0.05] + [0.25] * 4 + [0.5] * 3 + [0.8] * 3, '4-3-3'),
+            ([0.05] + [0.22] * 3 + [0.45] * 4 + [0.68] * 2 + [0.88], '3-4-2-1'),
+            ([0.05] + [0.2] * 3 + [0.5] * 5 + [0.85] * 2, '3-5-2'),
+        ]:
+            self.assertEqual(self._formasi(xs), harapan)
+
+    def test_double_pivot_dapat_dua_DM(self):
+        """Lini tengah 2 pemain itu kasus PALING SERING (4-2-3-1), dan versi
+        pertama aturan label nggak menanganinya sama sekali."""
+        label = self._label([0.05] + [0.25] * 4 + [0.45] * 2 + [0.65] * 3 + [0.85])
+        self.assertEqual(label[5:7], ['DM', 'DM'])
+        self.assertEqual(label[7:10], ['LW', 'AM', 'RW'])
+
+    def test_lini_tengah_lebar_jadi_sayap_kalau_bek_udah_empat(self):
+        """4-4-2: bek sayap udah ada di lini belakang, jadi yang lebar di
+        tengah itu SAYAP, bukan wing-back."""
+        self.assertEqual(self._label([0.05] + [0.25] * 4 + [0.5] * 4 + [0.8] * 2)[5:9],
+                         ['LW', 'CM', 'CM', 'RW'])
+
+    def test_lini_tengah_lebar_jadi_wing_back_kalau_bek_cuma_tiga(self):
+        self.assertEqual(self._label([0.05] + [0.22] * 3 + [0.45] * 4 + [0.68] * 2 + [0.88])[4:8],
+                         ['LB', 'DM', 'DM', 'RB'])
+
+    def test_lini_tengah_tiga_yang_bukan_menyerang_tetap_sentral(self):
+        """4-3-3: lini tengah 3 itu sentral. Yang jadi sayap cuma band
+        menyerang di 4-2-3-1."""
+        self.assertEqual(self._label([0.05] + [0.25] * 4 + [0.5] * 3 + [0.8] * 3)[5:8],
+                         ['CM', 'CM', 'CM'])
+
+    def test_y_kecil_berarti_kiri(self):
+        """Diverifikasi dari data produksi: Luke Shaw (bek kiri) y=0.125,
+        Mazraoui (bek kanan) y=0.875 di laga yang sama."""
+        from matches.lineup_prediction import label_lines, split_lines
+
+        xi = [{'x': 0.05, 'y': 0.5}] + [
+            {'x': 0.25, 'y': y} for y in (0.125, 0.375, 0.625, 0.875)
+        ] + [{'x': 0.5, 'y': 0.5}] * 6
+        self.assertEqual(label_lines(split_lines(xi))[1], 'LB')
+        self.assertEqual(label_lines(split_lines(xi))[4], 'RB')
+
+    def test_kunci_slot_bernomor_kalau_labelnya_kembar(self):
+        from matches.lineup_prediction import slot_keys
+
+        self.assertEqual(
+            slot_keys(['GK', 'LB', 'CB', 'CB', 'RB', 'DM', 'DM', 'LW', 'AM', 'RW', 'CF']),
+            ['GK', 'LB', 'CB1', 'CB2', 'RB', 'DM1', 'DM2', 'LW', 'AM', 'RW', 'CF'],
+        )
+
+
+class PrediksiSusunanTests(TestCase):
+    """`predict_xi` — agregasi lintas laga."""
+
+    def setUp(self):
+        from players.models import Player
+
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich')
+        self.pemain = [
+            Player.objects.create(name=f'Pemain {i}', team=self.mu) for i in range(14)
+        ]
+        self.XS = [0.05] + [0.25] * 4 + [0.45] * 2 + [0.65] * 3 + [0.85]
+
+    def _laga(self, hari_lalu, urutan_pemain, menit=90):
+        from datetime import timedelta
+
+        from matches.models import PlayerMatchStatistics
+
+        match = Match.objects.create(
+            home_team=self.mu,
+            away_team=self.lawan,
+            kickoff_at=timezone.now() - timedelta(days=hari_lalu),
+            status=Match.Status.FINISHED,
+        )
+        for i, (x, idx) in enumerate(zip(self.XS, urutan_pemain)):
+            PlayerMatchStatistics.objects.create(
+                match=match,
+                player=self.pemain[idx],
+                team=self.mu,
+                formation_x=x,
+                formation_y=(i % 4) * 0.25 + 0.1,
+                minutes_played=menit,
+            )
+        return match
+
+    def test_susunan_identik_menghasilkan_keyakinan_penuh(self):
+        from matches.lineup_prediction import predict_xi
+
+        for h in (5, 10, 15, 20, 25):
+            self._laga(h, list(range(11)))
+        p = predict_xi(self.mu, timezone.now())
+        self.assertEqual(p['formation'], '4-2-3-1')
+        self.assertEqual(p['n_efektif'], 5)
+        # Semua slot diisi orang yang sama tiap laga -> nggak ada yang ragu.
+        self.assertTrue(all(s['confidence_pct'] is None for s in p['slots']))
+
+    def test_pemain_pengganti_di_satu_laga_menurunkan_persentase(self):
+        from matches.lineup_prediction import predict_xi
+
+        for h in (5, 10, 15, 20):
+            self._laga(h, list(range(11)))
+        ganti = list(range(11))
+        ganti[10] = 11  # penyerang beda di laga terlama
+        self._laga(25, ganti)
+        p = predict_xi(self.mu, timezone.now())
+        cf = [s for s in p['slots'] if s['position'] == 'CF'][0]
+        self.assertEqual(cf['confidence_pct'], 80)
+        self.assertEqual(cf['frekuensi'], '4/5')
+
+    def test_laga_berformasi_lain_dibuang(self):
+        from matches.lineup_prediction import predict_xi
+
+        for h in (5, 10, 15):
+            self._laga(h, list(range(11)))
+        # Satu laga 4-4-2.
+        self.XS = [0.05] + [0.25] * 4 + [0.5] * 4 + [0.8] * 2
+        self._laga(20, list(range(11)))
+        p = predict_xi(self.mu, timezone.now())
+        self.assertEqual(p['formation'], '4-2-3-1')
+        self.assertEqual(p['n_efektif'], 3)
+        self.assertTrue(any('formasinya beda' in w for w in p['warnings']))
+
+    def test_laga_dengan_koordinat_bolong_dilewati(self):
+        """pull_fotmob bisa kehilangan slot tanpa error kalau external ref-nya
+        nggak ketemu. Laga bercoordinat 10 itu data bolong, bukan formasi
+        10 pemain."""
+        from matches.lineup_prediction import read_xi
+        from matches.models import PlayerMatchStatistics
+
+        m = self._laga(5, list(range(11)))
+        PlayerMatchStatistics.objects.filter(match=m).order_by('id').first().delete()
+        self.assertIsNone(read_xi(m, self.mu))
+
+    def test_di_bawah_ambang_persentase_nggak_dicetak(self):
+        from matches.lineup_prediction import predict_xi
+
+        self._laga(5, list(range(11)))
+        self._laga(10, list(range(11)))
+        p = predict_xi(self.mu, timezone.now())
+        self.assertEqual(p['n_efektif'], 2)
+        self.assertTrue(all(s['confidence_pct'] is None for s in p['slots']))
+        self.assertTrue(any('di bawah' in w for w in p['warnings']))
+
+    def test_menit_kosong_membatalkan_penandaan_pemain_kunci(self):
+        from matches.lineup_prediction import predict_xi
+
+        for h in (5, 10, 15):
+            self._laga(h, list(range(11)))
+        self._laga(20, list(range(11)), menit=None)
+        p = predict_xi(self.mu, timezone.now())
+        self.assertFalse(any(s['is_key'] for s in p['slots']))
+        self.assertTrue(any('pemain kunci dilewati' in w for w in p['warnings']))
+
+    def test_satu_pemain_nggak_dipakai_di_dua_slot(self):
+        from matches.lineup_prediction import predict_xi
+
+        for h in (5, 10, 15, 20, 25):
+            self._laga(h, list(range(11)))
+        p = predict_xi(self.mu, timezone.now())
+        ids = [s['player'].pk for s in p['slots'] if s['player']]
+        self.assertEqual(len(ids), len(set(ids)))
