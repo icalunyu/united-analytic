@@ -388,3 +388,106 @@ class TransferMergeTests(TestCase):
 
         self._gabung()
         self.assertEqual(Player.objects.filter(name='Josh King').count(), 2)
+
+
+class UnderstatAliasMergeTests(TestCase):
+    """Aturan `_merge_understat_aliases` di merge_duplicates.
+
+    Understat menulis nama lengkap, provider lain nama panggung. Kunci
+    (inisial, nama belakang) membaca 'Amad Diallo Traore' dan 'Amad Diallo'
+    sebagai dua orang — di produksi 146 laga vs 32 laga, satu orang.
+    """
+
+    def setUp(self):
+        from players.models import Team
+
+        self.mu = Team.objects.create(name='Manchester United FC', is_manchester_united=True)
+        self.forest = Team.objects.create(name='Nottingham Forest FC')
+        self.lawan = Team.objects.create(name='Chelsea FC')
+
+    def _main(self, player, team, match=None):
+        from django.utils import timezone
+
+        from matches.models import Match, PlayerMatchStatistics
+
+        match = match or Match.objects.create(
+            home_team=team, away_team=self.lawan, kickoff_at=timezone.now()
+        )
+        PlayerMatchStatistics.objects.create(match=match, player=player, team=team)
+        return match
+
+    @staticmethod
+    def _understat(player, external_id):
+        from players.models import DataSource, PlayerExternalRef
+
+        PlayerExternalRef.objects.create(
+            player=player, source=DataSource.UNDERSTAT, external_id=external_id
+        )
+
+    @staticmethod
+    def _gabung():
+        from django.core.management import call_command
+
+        call_command('merge_duplicates', '--apply', '--players-only', verbosity=0)
+
+    def test_nama_panjang_understat_dilebur_ke_record_utama(self):
+        from players.models import DataSource, Player, PlayerExternalRef
+        from matches.models import PlayerMatchStatistics
+
+        utama = Player.objects.create(name='Amad Diallo', team=self.mu)
+        PlayerExternalRef.objects.create(player=utama, source=DataSource.ESPN, external_id=1)
+        alias = Player.objects.create(name='Amad Diallo Traore', team=self.mu)
+        self._understat(alias, 6885)
+
+        laga = self._main(utama, self.mu)
+        self._main(alias, self.mu, match=laga)  # bertumpuk di laga yang sama
+
+        self._gabung()
+        self.assertFalse(Player.objects.filter(pk=alias.pk).exists())
+        self.assertTrue(Player.objects.filter(pk=utama.pk).exists())
+        # Baris statistiknya menyatu, bukan salah satunya lenyap.
+        self.assertEqual(PlayerMatchStatistics.objects.filter(player=utama).count(), 1)
+
+    def test_dua_kandidat_ditolak(self):
+        """Forest punya 'Jair Cunha' DAN 'Jair Paula' — 'Jair' tidak boleh memilih."""
+        from players.models import DataSource, Player, PlayerExternalRef
+
+        a = Player.objects.create(name='Jair Cunha', team=self.forest)
+        b = Player.objects.create(name='Jair Paula', team=self.forest)
+        for p, i in ((a, 11), (b, 12)):
+            PlayerExternalRef.objects.create(player=p, source=DataSource.ESPN, external_id=i)
+        alias = Player.objects.create(name='Jair Silva', team=self.forest)
+        self._understat(alias, 7001)
+        laga = self._main(a, self.forest)
+        self._main(alias, self.forest, match=laga)
+
+        self._gabung()
+        self.assertTrue(Player.objects.filter(pk=alias.pk).exists())
+
+    def test_tanpa_laga_bertumpuk_tidak_digabung(self):
+        """Nama mirip saja tidak cukup — harus ada bukti pemecahannya nyata."""
+        from players.models import DataSource, Player, PlayerExternalRef
+
+        utama = Player.objects.create(name='Destiny Udogie', team=self.mu)
+        PlayerExternalRef.objects.create(player=utama, source=DataSource.ESPN, external_id=21)
+        alias = Player.objects.create(name='Iyenoma Destiny Udogie', team=self.mu)
+        self._understat(alias, 7005)
+        self._main(utama, self.mu)
+        self._main(alias, self.mu)  # laga BERBEDA
+
+        self._gabung()
+        self.assertTrue(Player.objects.filter(pk=alias.pk).exists())
+
+    def test_record_yang_dikenal_provider_lain_tidak_disentuh(self):
+        from players.models import DataSource, Player, PlayerExternalRef
+
+        utama = Player.objects.create(name='Ezri Konsa', team=self.mu)
+        PlayerExternalRef.objects.create(player=utama, source=DataSource.ESPN, external_id=31)
+        lain = Player.objects.create(name='Ezri Konsa Ngoyo', team=self.mu)
+        self._understat(lain, 7006)
+        PlayerExternalRef.objects.create(player=lain, source=DataSource.FOTMOB, external_id=99)
+        laga = self._main(utama, self.mu)
+        self._main(lain, self.mu, match=laga)
+
+        self._gabung()
+        self.assertTrue(Player.objects.filter(pk=lain.pk).exists())

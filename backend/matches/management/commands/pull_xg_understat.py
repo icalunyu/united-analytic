@@ -1,3 +1,4 @@
+import html
 import time
 from datetime import datetime, timezone as dt_timezone
 
@@ -9,7 +10,7 @@ from matches.models import Match, MatchIngest, MatchShot, PlayerMatchStatistics
 from matches.ingest_utils import record_conflicts, store_raw
 from matches.services import UnderstatClient, UnderstatError
 from players.dedup import resolve_player, resolve_team
-from players.models import DataSource
+from players.models import DataSource, PlayerExternalRef
 from players.provenance import resolve_updates
 
 # Understat nggak nyantumin rate limit resmi. Jeda kecil antar match biar
@@ -168,7 +169,11 @@ class Command(BaseCommand):
         return match
 
     def _save_shots(self, match, shots):
-        MatchShot.objects.filter(match=match).delete()
+        # HANYA tembakan Understat. Dulu ini menghapus seluruh MatchShot laga
+        # ini — termasuk milik FotMob — jadi siapa pun yang jalan belakangan
+        # menghapus hasil yang lain. Yang menyelamatkan kita selama ini cuma
+        # urutan cron, dan itu bukan jaminan.
+        MatchShot.objects.filter(match=match, source=DataSource.UNDERSTAT).delete()
 
         rows = {}
         for side, entries in shots.items():
@@ -187,6 +192,7 @@ class Command(BaseCommand):
 
                 rows[shot_id] = MatchShot(
                     match=match,
+                    source=DataSource.UNDERSTAT,
                     team=team,
                     player=player,
                     assisted_by=assisted_by,
@@ -242,8 +248,40 @@ class Command(BaseCommand):
 
     @staticmethod
     def _resolve_player(external_id, name, team):
+        """Cocokkan pemain Understat, termasuk kalau namanya lebih panjang.
+
+        Understat sering menulis nama lengkap sementara provider lain memakai
+        nama panggung: 'Amad Diallo Traore' vs 'Amad Diallo', 'Ezri Konsa
+        Ngoyo' vs 'Ezri Konsa', 'Iyenoma Destiny Udogie' vs 'Destiny Udogie'.
+
+        `player_names_match` memakai kunci (inisial, nama belakang), jadi
+        'diallo' vs 'traore' dibaca sebagai dua orang berbeda dan lahirlah
+        record kedua. Di produksi ini menghasilkan 16 Player duplikat, yang
+        terparah Amad Diallo: 146 laga di satu record, 32 di record lain —
+        statistik satu orang terbelah tanpa ada yang sadar.
+
+        Penambalnya: sebelum bikin record baru, cari pemain di tim yang sama
+        yang token namanya bersinggungan sebagai himpunan bagian. WAJIB tepat
+        satu kandidat — Nottingham Forest punya 'Jair Cunha' DAN 'Jair Paula',
+        jadi nama 'Jair' saja tidak boleh dipaksa menempel ke salah satunya.
+        """
         if not external_id or not name:
             return None
+
+        name = html.unescape(name)  # Understat kirim "O&#039;Brien" apa adanya
+
+        ref = PlayerExternalRef.objects.filter(
+            source=DataSource.UNDERSTAT, external_id=int(external_id)
+        ).first()
+        if ref is None and team is not None:
+            kandidat = Command._kandidat_himpunan_bagian(name, team)
+            if kandidat is not None:
+                PlayerExternalRef.objects.create(
+                    player=kandidat, source=DataSource.UNDERSTAT,
+                    external_id=int(external_id),
+                )
+                return kandidat
+
         player, _ = resolve_player(
             source=DataSource.UNDERSTAT,
             external_id=int(external_id),
@@ -251,6 +289,33 @@ class Command(BaseCommand):
             defaults={'name': name, 'team': team},
         )
         return player
+
+    @staticmethod
+    def _kandidat_himpunan_bagian(name, team):
+        """Satu-satunya pemain di `team` yang token namanya subset/superset.
+
+        Return None kalau tidak ada, atau kalau ada lebih dari satu — ambigu
+        lebih baik dibiarkan jadi record terpisah daripada ditempelkan ke orang
+        yang salah.
+        """
+        from players.models import Player
+        from players.name_utils import fold_accents
+
+        def token(n):
+            return {t for t in fold_accents(html.unescape(n)).replace('-', ' ').split() if t}
+
+        target = token(name)
+        if len(target) < 2:
+            return None  # nama satu kata terlalu lemah buat dijadikan bukti
+
+        # Kesetaraan ikut diterima: 'Emile Smith-Rowe' dan 'Emile Smith Rowe'
+        # jadi token yang sama persis setelah tanda hubung disamakan, dan itu
+        # justru kasus yang paling jelas — bukan yang paling meragukan.
+        cocok = [
+            p for p in Player.objects.filter(team=team)
+            if (lambda t: bool(t) and (t <= target or target <= t))(token(p.name))
+        ]
+        return cocok[0] if len(cocok) == 1 else None
 
     @staticmethod
     def _resolve_player_by_name(name, team):

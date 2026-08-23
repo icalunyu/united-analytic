@@ -66,6 +66,7 @@ class Command(BaseCommand):
             total += self._merge_co_occurring(apply_changes)
             total += self._merge_roster_leftovers(apply_changes)
             total += self._merge_transfers(apply_changes)
+            total += self._merge_understat_aliases(apply_changes)
 
         if not total:
             self.stdout.write(self.style.SUCCESS('Nggak ada duplikat. Nggak ada yang perlu digabung.'))
@@ -402,6 +403,97 @@ class Command(BaseCommand):
                     self._merge_stat_rows(canonical, loser)
                     absorb(loser, canonical)
             merged += len(losers)
+
+        return merged
+
+    def _merge_understat_aliases(self, apply_changes):
+        """Gabungin record yang lahir karena Understat menulis nama lebih panjang.
+
+        Understat memakai nama lengkap sementara provider lain memakai nama
+        panggung: 'Amad Diallo Traore' vs 'Amad Diallo', 'Ezri Konsa Ngoyo' vs
+        'Ezri Konsa', 'Iyenoma Destiny Udogie' vs 'Destiny Udogie'. Kunci
+        pencocokan yang ada cuma (inisial, nama belakang), jadi 'diallo' vs
+        'traore' dibaca sebagai dua orang.
+
+        Akibatnya di produksi: Amad Diallo punya 146 laga di satu record dan 32
+        di record lain. Aturan lain tidak menjangkaunya — `_merge_co_occurring`
+        menuntut nama yang sama persis, `_merge_transfers` menuntut tanggal
+        yang terpisah padahal ini justru bertumpuk.
+
+        Tiga syarat, semuanya harus lolos:
+
+        1. Record itu HANYA bersumber `understat`. Kalau provider lain juga
+           mengenalnya, dia entitas yang berdiri sendiri.
+        2. Tepat SATU kandidat di tim yang sama yang token namanya himpunan
+           bagian atau sama persis. Nottingham Forest punya 'Jair Cunha' DAN
+           'Jair Paula' — nama 'Jair' saja tidak boleh dipaksa memilih.
+        3. Mereka pernah muncul di laga DAN tim yang sama. Itu bukti
+           pemecahannya nyata, bukan sekadar nama mirip.
+
+        Yang sengaja TIDAK tertangkap dan memang harus dibiarkan: 'Yehor
+        Yarmolyuk' vs 'Yehor Yarmoliuk' (beda transliterasi, bukan himpunan
+        bagian) dan 'Chimuanya Ugochukwu' vs 'Lesley Ugochukwu' (beda nama
+        depan). Keduanya butuh mata manusia.
+        """
+        import html as _html
+
+        from matches.models import PlayerMatchStatistics
+        from players.models import PlayerExternalRef
+
+        def token(nama):
+            return {t for t in fold_accents(_html.unescape(nama)).replace('-', ' ').split() if t}
+
+        sumber = defaultdict(set)
+        for ref in PlayerExternalRef.objects.all():
+            sumber[ref.player_id].add(ref.source)
+        hanya_understat = [pid for pid, s in sumber.items() if s == {DataSource.UNDERSTAT}]
+
+        merged = 0
+        for loser in Player.objects.filter(pk__in=hanya_understat).select_related('team'):
+            if loser.team_id is None:
+                continue
+            target = token(loser.name)
+            if len(target) < 2:
+                continue  # nama satu kata terlalu lemah
+
+            cocok = [
+                p for p in Player.objects.filter(team_id=loser.team_id).exclude(pk=loser.pk)
+                if (lambda t: bool(t) and (t <= target or target <= t))(token(p.name))
+            ]
+            if len(cocok) != 1:
+                if len(cocok) > 1:
+                    self.stdout.write(
+                        f'  lewati {loser.name!r} — {len(cocok)} kandidat, ambigu'
+                    )
+                continue
+
+            canonical = cocok[0]
+            laga_loser = set(
+                PlayerMatchStatistics.objects.filter(player=loser).values_list('match_id', flat=True)
+            )
+            laga_canon = set(
+                PlayerMatchStatistics.objects.filter(player=canonical).values_list('match_id', flat=True)
+            )
+            bareng = laga_loser & laga_canon
+            if not bareng:
+                self.stdout.write(
+                    f'  lewati {loser.name!r} — tidak pernah muncul di laga yang sama '
+                    f'dengan {canonical.name!r}, buktinya kurang'
+                )
+                continue
+
+            self.stdout.write(
+                f'ALIAS UNDERSTAT {canonical.name!r} (id={canonical.pk}, '
+                f'{len(laga_canon)} laga) <- {loser.pk} {loser.name!r} '
+                f'({len(laga_loser)} laga, {len(bareng)} bertumpuk)'
+            )
+            if apply_changes:
+                # Baris statistik disatukan DULU. Tanpa ini absorb() membuang
+                # baris loser karena bentrok unique(match, player) — dan isinya
+                # ikut hilang, padahal justru di situ kolom xG-nya.
+                self._merge_stat_rows(canonical, loser)
+                absorb(loser, canonical)
+            merged += 1
 
         return merged
 

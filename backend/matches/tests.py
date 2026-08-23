@@ -498,3 +498,131 @@ class NormalisasiKoordinatTests(SimpleTestCase):
         self.assertIsNone(plays[0].field_x)
         self.assertIsNone(plays[1].field_y)
         self.assertAlmostEqual(plays[1].field_x, 0.12, places=3)
+
+
+class UnderstatResolusiPemainTests(TestCase):
+    """Understat menulis nama lengkap, provider lain nama panggung.
+
+    Regresi: 'Amad Diallo Traore' (Understat) vs 'Amad Diallo' (ESPN/FotMob)
+    dibaca sebagai dua orang karena kunci pencocokan cuma (inisial, nama
+    belakang) — 'diallo' vs 'traore'. Akibatnya 146 laga di satu record dan 32
+    di record lain: statistik satu orang terbelah tanpa gejala.
+    """
+
+    def setUp(self):
+        from players.models import Player, Team
+
+        self.mu = Team.objects.create(name='Manchester United FC', is_manchester_united=True)
+        self.forest = Team.objects.create(name='Nottingham Forest FC')
+        self.amad = Player.objects.create(name='Amad Diallo', team=self.mu)
+
+    @staticmethod
+    def _resolve(external_id, name, team):
+        from matches.management.commands.pull_xg_understat import Command
+
+        return Command._resolve_player(external_id, name, team)
+
+    def test_nama_lebih_panjang_menempel_ke_record_yang_ada(self):
+        hasil = self._resolve(6885, 'Amad Diallo Traore', self.mu)
+        self.assertEqual(hasil.pk, self.amad.pk, 'harus nempel, bukan bikin record baru')
+
+        from players.models import Player
+
+        self.assertEqual(Player.objects.filter(team=self.mu).count(), 1)
+
+    def test_ref_understat_ikut_dibuat_supaya_penarikan_berikutnya_langsung_ketemu(self):
+        from players.models import DataSource, PlayerExternalRef
+
+        self._resolve(6885, 'Amad Diallo Traore', self.mu)
+        self.assertTrue(
+            PlayerExternalRef.objects.filter(
+                source=DataSource.UNDERSTAT, external_id=6885, player=self.amad
+            ).exists()
+        )
+
+    def test_dua_kandidat_TIDAK_dipaksa_menempel(self):
+        """Kasus nyata: Forest punya 'Jair Cunha' DAN 'Jair Paula'."""
+        from players.models import Player
+
+        Player.objects.create(name='Jair Cunha', team=self.forest)
+        Player.objects.create(name='Jair Paula', team=self.forest)
+
+        hasil = self._resolve(7001, 'Jair', self.forest)
+        self.assertEqual(Player.objects.filter(team=self.forest).count(), 3)
+        self.assertNotIn(hasil.name, ('Jair Cunha', 'Jair Paula'))
+
+    def test_entitas_html_diurai(self):
+        from players.models import Player, Team
+
+        everton = Team.objects.create(name='Everton FC')
+        asli = Player.objects.create(name="Jake O'Brien", team=everton)
+
+        hasil = self._resolve(7002, 'Jake O&#039;Brien', everton)
+        self.assertEqual(hasil.pk, asli.pk)
+        self.assertEqual(Player.objects.filter(team=everton).count(), 1)
+
+    def test_tanda_hubung_disamakan_dengan_spasi(self):
+        from players.models import Player, Team
+
+        fulham = Team.objects.create(name='Fulham FC')
+        asli = Player.objects.create(name='Emile Smith Rowe', team=fulham)
+
+        hasil = self._resolve(7003, 'Emile Smith-Rowe', fulham)
+        self.assertEqual(hasil.pk, asli.pk)
+
+    def test_nama_satu_kata_tidak_dijadikan_bukti(self):
+        from players.models import Player, Team
+
+        city = Team.objects.create(name='Manchester City FC')
+        Player.objects.create(name='Savio Moreira', team=city)
+
+        hasil = self._resolve(7004, 'Savio', city)
+        self.assertNotEqual(hasil.name, 'Savio Moreira')
+        self.assertEqual(Player.objects.filter(team=city).count(), 2)
+
+
+class UnderstatShotSourceTests(TestCase):
+    """_save_shots dulu menghapus SELURUH tembakan laga, termasuk milik FotMob."""
+
+    def setUp(self):
+        from django.utils import timezone
+
+        from players.models import Team
+
+        self.mu = Team.objects.create(name='Manchester United FC', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Chelsea FC')
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan, kickoff_at=timezone.now()
+        )
+
+    def test_hanya_tembakan_understat_yang_dihapus(self):
+        from matches.management.commands.pull_xg_understat import Command
+        from matches.models import MatchShot
+        from players.models import DataSource
+
+        MatchShot.objects.create(
+            match=self.match, team=self.mu, source=DataSource.FOTMOB,
+            external_id='fm-1', minute=10, xg=0.3,
+        )
+        MatchShot.objects.create(
+            match=self.match, team=self.mu, source=DataSource.UNDERSTAT,
+            external_id='us-lama', minute=20, xg=0.2,
+        )
+
+        Command()._save_shots(self.match, {})
+
+        sisa = MatchShot.objects.filter(match=self.match)
+        self.assertEqual(sisa.count(), 1)
+        self.assertEqual(sisa.first().source, DataSource.FOTMOB)
+
+    def test_tembakan_baru_membawa_sumbernya(self):
+        from matches.management.commands.pull_xg_understat import Command
+        from matches.models import MatchShot
+        from players.models import DataSource
+
+        Command()._save_shots(self.match, {'h': [{
+            'id': '99', 'minute': '33', 'xG': '0.44', 'result': 'Goal',
+            'X': '0.9', 'Y': '0.5', 'player_id': None, 'player': None,
+        }]})
+        shot = MatchShot.objects.get(match=self.match, external_id='99')
+        self.assertEqual(shot.source, DataSource.UNDERSTAT)
