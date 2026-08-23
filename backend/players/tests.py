@@ -491,3 +491,97 @@ class UnderstatAliasMergeTests(TestCase):
 
         self._gabung()
         self.assertTrue(Player.objects.filter(pk=lain.pk).exists())
+
+
+class LagaGandaMergeTests(TestCase):
+    """Efek samping penggabungan tim: satu laga tersimpan dua kali.
+
+    Highlightly menyebut klub itu 'Wolves', provider lain 'Wolverhampton
+    Wanderers', jadi tiap pertemuan punya dua record Match di bawah dua record
+    tim. Begitu timnya digabung, keduanya menunjuk tim yang sama. Akibatnya
+    Premier League tercatat 40 laga per musim padahal 38.
+    """
+
+    def setUp(self):
+        from datetime import datetime, timezone as dt_tz
+
+        from players.models import Team
+
+        self.mu = Team.objects.create(name='Manchester United FC', is_manchester_united=True)
+        self.wolves = Team.objects.create(name='Wolverhampton Wanderers')
+        self.kickoff = datetime(2025, 12, 8, 20, 0, tzinfo=dt_tz.utc)
+
+    def _laga(self):
+        from matches.models import Match
+
+        return Match.objects.create(
+            home_team=self.mu, away_team=self.wolves, kickoff_at=self.kickoff,
+            league_name='Premier League',
+        )
+
+    def _gol(self, match, minute, player=None):
+        from matches.models import MatchEvent
+
+        return MatchEvent.objects.create(
+            match=match, team=self.mu, player=player,
+            event_type=MatchEvent.EventType.GOAL, minute=minute,
+        )
+
+    @staticmethod
+    def _gabung():
+        from django.core.management import call_command
+
+        call_command('merge_duplicates', '--apply', '--teams-only', verbosity=0)
+
+    def test_laga_kembar_dilebur_jadi_satu(self):
+        from matches.models import Match, PlayerMatchStatistics
+        from players.models import Player
+
+        kaya = self._laga()
+        pemain = Player.objects.create(name='Bruno Fernandes', team=self.mu)
+        PlayerMatchStatistics.objects.create(match=kaya, player=pemain, team=self.mu)
+        kosong = self._laga()
+
+        self._gabung()
+        self.assertEqual(Match.objects.count(), 1)
+        self.assertTrue(Match.objects.filter(pk=kaya.pk).exists())
+        self.assertFalse(Match.objects.filter(pk=kosong.pk).exists())
+
+    def test_event_yang_sama_TIDAK_digandakan(self):
+        """Tanpa dedup, laga 1-0 mendadak punya dua gol yang sama.
+
+        MatchEvent tidak punya unique constraint, jadi absorb() akan memindahkan
+        begitu saja. Kembaran yang statistiknya kosong pun tetap membawa event
+        dari provider lain.
+        """
+        from matches.models import Match, MatchEvent, PlayerMatchStatistics
+        from players.models import Player
+
+        pemain = Player.objects.create(name='Bruno Fernandes', team=self.mu)
+        kaya = self._laga()
+        PlayerMatchStatistics.objects.create(match=kaya, player=pemain, team=self.mu)
+        self._gol(kaya, 23, pemain)
+
+        kembar = self._laga()
+        self._gol(kembar, 23, pemain)   # gol yang SAMA dari provider lain
+        self._gol(kembar, 77, pemain)   # gol yang cuma dipunya provider ini
+
+        self._gabung()
+        tersisa = Match.objects.get()
+        menit = sorted(MatchEvent.objects.filter(match=tersisa).values_list('minute', flat=True))
+        self.assertEqual(menit, [23, 77], 'gol menit 23 tidak boleh tercatat dua kali')
+
+    def test_laga_berbeda_di_hari_sama_tidak_ikut_dilebur(self):
+        from datetime import timedelta
+
+        from matches.models import Match
+        from players.models import Team
+
+        lain = Team.objects.create(name='Everton FC')
+        self._laga()
+        Match.objects.create(
+            home_team=self.mu, away_team=lain,
+            kickoff_at=self.kickoff + timedelta(hours=3),
+        )
+        self._gabung()
+        self.assertEqual(Match.objects.count(), 2)

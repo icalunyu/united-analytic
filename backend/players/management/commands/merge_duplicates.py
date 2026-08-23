@@ -61,6 +61,10 @@ class Command(BaseCommand):
         # dan baru kedeteksi sebagai duplikat di tahap pemain.
         if do_teams:
             total += self._merge_teams(apply_changes)
+            # Harus SESUDAH tim digabung: dua record tim untuk satu klub bikin
+            # satu laga tersimpan dua kali, dan itu baru kelihatan setelah
+            # keduanya menunjuk tim yang sama.
+            total += self._merge_duplicate_matches(apply_changes)
         if do_players:
             total += self._merge_players(apply_changes)
             total += self._merge_co_occurring(apply_changes)
@@ -100,6 +104,75 @@ class Command(BaseCommand):
         return merged
 
     # ---------------------------------------------------------------- players
+
+    def _merge_duplicate_matches(self, apply_changes):
+        """Lebur Match yang sebenarnya satu laga: tim sama, tanggal sama.
+
+        Muncul sebagai efek samping penggabungan tim. Highlightly menyebut klub
+        itu 'Wolves' dan provider lain 'Wolverhampton Wanderers', jadi tiap
+        pertemuan tersimpan dua kali di bawah dua record tim. Begitu timnya
+        digabung, keduanya menunjuk tim yang sama dan barulah terlihat kembar.
+
+        Dampaknya bukan kosmetik: Premier League tercatat **40 laga per musim**
+        padahal 38, jadi filter kompetisi apa pun yang dibangun di atasnya akan
+        salah hitung.
+
+        **Event wajib di-dedup dulu.** MatchEvent tidak punya unique constraint,
+        jadi memindahkan begitu saja akan menggandakan gol dan kartu — laga
+        1-0 mendadak punya dua gol yang sama. Kembaran yang statistiknya kosong
+        pun biasanya tetap membawa 15-23 event dari provider lain.
+        """
+        Match = apps.get_model('matches', 'Match')
+        MatchEvent = apps.get_model('matches', 'MatchEvent')
+
+        kelompok = defaultdict(list)
+        for m in Match.objects.select_related('home_team', 'away_team'):
+            kelompok[(m.home_team_id, m.away_team_id, m.kickoff_at.date())].append(m)
+
+        merged = 0
+        for kunci, laga in sorted(kelompok.items(), key=lambda kv: str(kv[0])):
+            if len(laga) < 2:
+                continue
+
+            def bobot(m):
+                return (
+                    m.player_statistics.count()
+                    + m.plays.count()
+                    + m.shots.count()
+                    + m.events.count()
+                )
+
+            urut = sorted(laga, key=lambda m: (-bobot(m), m.pk))
+            canonical, losers = urut[0], urut[1:]
+            self.stdout.write(
+                f'LAGA GANDA #{canonical.pk} {canonical.home_team.name[:16]} vs '
+                f'{canonical.away_team.name[:16]} {canonical.kickoff_at:%Y-%m-%d} '
+                f'(isi {bobot(canonical)}) <- '
+                + ', '.join(f'{m.pk}(isi {bobot(m)})' for m in losers)
+            )
+
+            if apply_changes:
+                for loser in losers:
+                    self._dedup_events(canonical, loser, MatchEvent)
+                    absorb(loser, canonical)
+            merged += len(losers)
+
+        return merged
+
+    @staticmethod
+    def _dedup_events(canonical, loser, MatchEvent):
+        """Buang event `loser` yang sudah punya padanan di `canonical`.
+
+        Padanan = jenis, menit, tim, dan pemain yang sama. Tanpa ini gol yang
+        sama tercatat dua kali setelah penggabungan.
+        """
+        sudah = {
+            (e.event_type, e.minute, e.team_id, e.player_id)
+            for e in MatchEvent.objects.filter(match=canonical)
+        }
+        for e in MatchEvent.objects.filter(match=loser):
+            if (e.event_type, e.minute, e.team_id, e.player_id) in sudah:
+                e.delete()
 
     def _merge_players(self, apply_changes):
         groups = defaultdict(list)
