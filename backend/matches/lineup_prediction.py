@@ -20,6 +20,7 @@ kesalahan yang bikin analis berhenti percaya sama app-nya. Teks di `note`
 menyebut batas ini eksplisit, dan UI harus ikut menyebutnya.
 """
 
+import re
 from collections import Counter, defaultdict
 
 # Dua slot dianggap sebaris kalau jarak x-nya di bawah ini. Koordinat FotMob
@@ -411,7 +412,7 @@ def suggest_hypotheses(team, before, window=DEFAULT_WINDOW):
                 'text': f'MU turun dengan formasi {top}.',
                 'evidence_note': (
                     f'Dasar: {n} dari {len(laga)} laga terakhir pakai {top}. '
-                    f'Cek: Match.home_formation/away_formation sesudah laga.'
+                    f'[cek:formasi={top}]'
                 ),
             })
 
@@ -426,8 +427,7 @@ def suggest_hypotheses(team, before, window=DEFAULT_WINDOW):
             'text': f'MU melepas minimal {ambang} tembakan tepat sasaran.',
             'evidence_note': (
                 f'Dasar: rata-rata {rata:.1f} dari {len(sot)} laga '
-                f'(rentang {min(sot)}-{max(sot)}). '
-                f'Cek: MatchTeamStatistics.shots_on_target >= {ambang}.'
+                f'(rentang {min(sot)}-{max(sot)}). [cek:shots_on_target>={ambang}]'
             ),
         })
 
@@ -446,7 +446,7 @@ def suggest_hypotheses(team, before, window=DEFAULT_WINDOW):
             catatan += f' ({dibuang} laga dibuang karena angkanya nggak masuk akal)'
         kandidat.append({
             'text': f'MU menguasai bola minimal {ambang}%.',
-            'evidence_note': f'{catatan}. Cek: MatchTeamStatistics.possession_pct >= {ambang}.',
+            'evidence_note': f'{catatan}. [cek:possession_pct>={ambang}]',
         })
 
     # 4. Gol.
@@ -460,7 +460,7 @@ def suggest_hypotheses(team, before, window=DEFAULT_WINDOW):
             'text': 'MU mencetak minimal 2 gol.' if rata >= 1.5 else 'MU mencetak minimal 1 gol.',
             'evidence_note': (
                 f'Dasar: rata-rata {rata:.1f} gol per laga dari {len(gol)} laga '
-                f'({"-".join(str(g) for g in gol)}). Cek: hitung MatchEvent bertipe GOAL.'
+                f'({"-".join(str(g) for g in gol)}). [cek:gol>={2 if rata >= 1.5 else 1}]'
             ),
         })
 
@@ -478,8 +478,34 @@ def suggest_hypotheses(team, before, window=DEFAULT_WINDOW):
             'evidence_note': (
                 f'Dasar: rata-rata {rata:.2f} dari {len(xg_per_laga)} laga yang punya xG. '
                 f'Cuma laga Premier League yang punya (cakupan Understat). '
-                f'Cek: jumlah MatchShot.xg sesudah pull_xg_understat jalan.'
+                f'[cek:xg>{ambang:.1f}]'
             ),
         })
 
     return kandidat
+
+
+
+# Penanda kriteria yang bisa dibaca mesin, ditempel di `evidence_note` waktu
+# kandidat dibuat: '[cek:shots_on_target>=6]'.
+#
+# Kenapa penanda di teks, bukan kolom terstruktur: hipotesis yang DITULIS
+# ANALIS SENDIRI nggak akan pernah punya kolom itu terisi, dan memaksa analis
+# ngisi formulir kriteria bakal bikin fitur ini nggak kepakai. Dengan penanda,
+# kandidat yang app hasilkan bisa dinilai otomatis, dan kalimat bebas analis
+# tetap masuk apa adanya — cuma statusnya tetap BELUM sampai dinilai manual.
+# App nggak pura-pura ngerti kalimat yang nggak dia tulis.
+CEK_PATTERN = re.compile(r'\[cek:(\w+)(>=|>|=)([\w.\-]+)\]')
+
+
+def baca_kriteria(evidence_note):
+    """(metrik, operator, ambang) dari penanda, atau None kalau nggak ada."""
+    m = CEK_PATTERN.search(evidence_note or '')
+    if not m:
+        return None
+    metrik, op, ambang = m.groups()
+    try:
+        ambang = float(ambang)
+    except ValueError:
+        pass  # formasi: ambangnya string, mis. '4-2-3-1'
+    return metrik, op, ambang

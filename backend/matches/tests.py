@@ -1227,12 +1227,23 @@ class KandidatHipotesisTests(TestCase):
         teks = [k['text'] for k in self._kandidat() if 'gol' in k['text']][0]
         self.assertIn('minimal 1 gol', teks)
 
-    def test_tiap_kandidat_bawa_kriteria_cek(self):
+    def test_tiap_kandidat_bawa_kriteria_yang_TERBACA_MESIN(self):
+        """Bukan cuma kalimat 'Cek: ...' buat dibaca manusia — evaluator harus
+        bisa menjalankannya tanpa menebak."""
+        from matches.lineup_prediction import baca_kriteria
+
         for h in (5, 10, 15):
             self._laga(h, sot=5, possession=55, gol=1)
-        for k in self._kandidat():
-            self.assertIn('Cek:', k['evidence_note'], k['text'])
+        kandidat = self._kandidat()
+        self.assertTrue(kandidat)
+        for k in kandidat:
             self.assertIn('Dasar:', k['evidence_note'], k['text'])
+            kriteria = baca_kriteria(k['evidence_note'])
+            self.assertIsNotNone(
+                kriteria, f'kandidat tanpa penanda terbaca-mesin: {k["text"]}'
+            )
+            metrik, op, ambang = kriteria
+            self.assertIn(op, ('=', '>=', '>'))
 
 
 class SvPersenDanUmpanPersenTests(TestCase):
@@ -1330,3 +1341,173 @@ class SvPersenDanUmpanPersenTests(TestCase):
             )['shots_faced'],
             9,
         )
+
+
+class EvaluatorHipotesisTests(TestCase):
+    """`evaluate_hypotheses` — inti panel Cek Prediksi."""
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from matches.models import HypothesisItem, MatchTeamStatistics, PredictionSnapshot
+
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.match = Match.objects.create(
+            home_team=self.mu,
+            away_team=Team.objects.create(name='Ipswich'),
+            kickoff_at=timezone.now() - timedelta(days=1),
+            status=Match.Status.FINISHED,
+            home_formation='4-2-3-1',
+        )
+        MatchTeamStatistics.objects.create(
+            match=self.match, team=self.mu, shots_on_target=7, possession_pct=58
+        )
+        self.snapshot = PredictionSnapshot.objects.create(match=self.match)
+        # created_at itu auto_now_add, jadi defaultnya SEKARANG — padahal
+        # laganya kemarin. Tanpa dimundurkan, prediction_before_kickoff()
+        # benar-benar menolaknya, dan itu memang perilaku yang dijaga:
+        # prediksi yang dibuat sesudah peluit nggak boleh menyamar jadi
+        # prediksi pra-laga.
+        PredictionSnapshot.objects.filter(pk=self.snapshot.pk).update(
+            created_at=self.match.kickoff_at - timedelta(hours=3)
+        )
+        self.snapshot.refresh_from_db()
+        self.HypothesisItem = HypothesisItem
+
+    def _hipotesis(self, teks, note, order=1):
+        return self.HypothesisItem.objects.create(
+            snapshot=self.snapshot, order=order, text=teks, evidence_note=note
+        )
+
+    def _jalankan(self, *args):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command('evaluate_hypotheses', '--match', self.match.pk, *args, stdout=out)
+        return out.getvalue()
+
+    def test_kriteria_terpenuhi_jadi_KENA(self):
+        h = self._hipotesis('6 tembakan tepat sasaran', 'Dasar: x. [cek:shots_on_target>=6]')
+        self._jalankan('--apply')
+        h.refresh_from_db()
+        self.assertEqual(h.outcome, self.HypothesisItem.Outcome.HIT)
+        self.assertIn('shots_on_target = 7', h.outcome_note)
+        self.assertIsNotNone(h.evaluated_at)
+
+    def test_kriteria_tidak_terpenuhi_jadi_MELESET(self):
+        h = self._hipotesis('10 tembakan tepat sasaran', 'Dasar: x. [cek:shots_on_target>=10]')
+        self._jalankan('--apply')
+        h.refresh_from_db()
+        self.assertEqual(h.outcome, self.HypothesisItem.Outcome.MISS)
+
+    def test_formasi_dibandingkan_sebagai_teks(self):
+        kena = self._hipotesis('formasi 4-2-3-1', '[cek:formasi=4-2-3-1]', order=1)
+        meleset = self._hipotesis('formasi 3-5-2', '[cek:formasi=3-5-2]', order=2)
+        self._jalankan('--apply')
+        kena.refresh_from_db(); meleset.refresh_from_db()
+        self.assertEqual(kena.outcome, self.HypothesisItem.Outcome.HIT)
+        self.assertEqual(meleset.outcome, self.HypothesisItem.Outcome.MISS)
+
+    def test_kalimat_bebas_analis_tetap_BELUM(self):
+        """App nggak pura-pura ngerti kalimat yang nggak dia tulis."""
+        h = self._hipotesis('MU akan menekan tinggi di 20 menit pertama', 'Firasat saya.')
+        self._jalankan('--apply')
+        h.refresh_from_db()
+        self.assertEqual(h.outcome, self.HypothesisItem.Outcome.PENDING)
+        self.assertIn('manual', h.outcome_note)
+
+    def test_data_belum_ada_tetap_BELUM_bukan_MELESET(self):
+        """Membedakan 'nggak terjadi' dari 'belum tahu' itu penting — kalau
+        keliru, hipotesis yang sah dihukum karena penarikan data telat."""
+        h = self._hipotesis('xG di atas 1.5', '[cek:xg>1.5]')
+        self._jalankan('--apply')
+        h.refresh_from_db()
+        self.assertEqual(h.outcome, self.HypothesisItem.Outcome.PENDING)
+        self.assertIn('belum ada', h.outcome_note)
+
+    def test_dry_run_nggak_menulis(self):
+        h = self._hipotesis('6 tembakan', '[cek:shots_on_target>=6]')
+        self._jalankan()
+        h.refresh_from_db()
+        self.assertEqual(h.outcome, self.HypothesisItem.Outcome.PENDING)
+
+    def test_laga_belum_final_ditolak(self):
+        from django.core.management.base import CommandError
+
+        Match.objects.filter(pk=self.match.pk).update(status=Match.Status.LIVE)
+        self._hipotesis('6 tembakan', '[cek:shots_on_target>=6]')
+        with self.assertRaises(CommandError) as ctx:
+            self._jalankan('--apply')
+        self.assertIn('belum final', str(ctx.exception))
+
+    def test_idempoten(self):
+        h = self._hipotesis('6 tembakan', '[cek:shots_on_target>=6]')
+        self._jalankan('--apply')
+        waktu = self.HypothesisItem.objects.get(pk=h.pk).evaluated_at
+        keluaran = self._jalankan('--apply')
+        self.assertIn('sudah dinilai', keluaran)
+        self.assertEqual(self.HypothesisItem.objects.get(pk=h.pk).evaluated_at, waktu)
+
+    def test_akurasi_susunan_membedakan_dua_sebab_kosong(self):
+        """Dua alasan berbeda kenapa akurasi nggak bisa dihitung, dan pesannya
+        harus beda — 'kita nggak memprediksi' vs 'datanya belum masuk'."""
+        from matches.models import LineupSlot
+        from players.models import Player
+
+        self._hipotesis('6 tembakan', '[cek:shots_on_target>=6]')
+
+        # (a) snapshot nggak punya prediksi susunan sama sekali
+        self.assertIn('nggak ada prediksi susunan', self._jalankan())
+
+        # (b) prediksi ada, tapi susunan sebenarnya belum ditarik
+        for i in range(11):
+            LineupSlot.objects.create(
+                snapshot=self.snapshot, slot=i + 1, position='CM',
+                player=Player.objects.create(name=f'Pemain {i}', team=self.mu),
+            )
+        self.assertIn('belum masuk', self._jalankan())
+
+
+class PrediksiSesudahPeluitDitolakTests(TestCase):
+    """`prediction_before_kickoff()` harus menolak snapshot pasca-kickoff.
+
+    Ini pagar yang bikin Cek Prediksi berarti. Kalau prediksi yang ditulis
+    SESUDAH laga bisa ikut terhitung, panel itu nggak membuktikan apa-apa.
+    Ketahuan waktu nulis test evaluator: snapshot dibuat dengan auto_now_add
+    buat laga kemarin, dan command-nya benar-benar menolak.
+    """
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from matches.models import PredictionSnapshot
+
+        mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.match = Match.objects.create(
+            home_team=mu,
+            away_team=Team.objects.create(name='Ipswich'),
+            kickoff_at=timezone.now() - timedelta(days=1),
+            status=Match.Status.FINISHED,
+        )
+        self.PredictionSnapshot = PredictionSnapshot
+        self.timedelta = timedelta
+
+    def _snapshot(self, jam_sebelum):
+        s = self.PredictionSnapshot.objects.create(match=self.match)
+        self.PredictionSnapshot.objects.filter(pk=s.pk).update(
+            created_at=self.match.kickoff_at - self.timedelta(hours=jam_sebelum)
+        )
+        return self.PredictionSnapshot.objects.get(pk=s.pk)
+
+    def test_snapshot_sesudah_peluit_diabaikan(self):
+        sesudah = self._snapshot(-2)  # 2 jam SESUDAH kickoff
+        self.assertFalse(sesudah.before_kickoff)
+        self.assertIsNone(self.match.prediction_before_kickoff())
+
+    def test_yang_dipakai_adalah_versi_terakhir_sebelum_peluit(self):
+        self._snapshot(48)
+        terbaru = self._snapshot(2)
+        self._snapshot(-1)  # pasca-peluit, harus diabaikan
+        self.assertEqual(self.match.prediction_before_kickoff(), terbaru)
