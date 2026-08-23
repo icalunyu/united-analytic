@@ -44,6 +44,23 @@ class Match(models.Model):
     def __str__(self):
         return f'{self.home_team} vs {self.away_team} ({self.kickoff_at:%Y-%m-%d})'
 
+    def prediction_before_kickoff(self):
+        """Versi prediksi TERAKHIR yang dibuat sebelum peluit, atau None.
+
+        Ini satu-satunya sumber yang boleh dipakai panel Cek Prediksi. Filternya
+        `created_at < kickoff_at`, jadi versi yang ditulis setelah laga mulai
+        tidak bisa menyamar jadi prediksi pra-laga — tanpa perlu mekanisme
+        kunci yang dilarang handoff.
+
+        Memenuhi kriteria selesai Tahap 5: "prediksi untuk laga yang sudah
+        berlangsung bisa diambil kembali beserta waktu pembuatannya."
+        """
+        return (
+            self.prediction_snapshots.filter(created_at__lt=self.kickoff_at)
+            .order_by('-created_at')
+            .first()
+        )
+
 
 class MatchExternalRef(models.Model):
     """Mapping (source, external_id) -> Match, sama konsepnya kayak
@@ -554,3 +571,146 @@ class FieldConflict(models.Model):
     def __str__(self):
         who = self.player or self.team
         return f'{who} {self.field}: {self.kept_value} ({self.kept_source}) vs {self.other_value} ({self.other_source})'
+
+
+class PredictionSnapshot(models.Model):
+    """Satu versi prediksi untuk satu laga, beku pada satu titik waktu.
+
+    Ini fondasi panel Cek Prediksi — yang handoff sebut **pembeda utama
+    produk**: membuktikan analisis dibuat sebelum laga, bukan setelah fakta.
+    Handoff juga tegas bahwa ini tidak bisa ditambal belakangan; prediksi yang
+    tidak tersimpan sebelum kick-off hilang selamanya.
+
+    **Kenapa snapshot, bukan satu baris yang di-update.** Handoff melarang
+    mekanisme kunci:
+
+        "Tidak ada mekanisme kunci atau approval. Framing yang sudah
+        disepakati dengan user: 'sampai konten ini diunggah, beginilah
+        prediksi kami' — prediksi terus diperbarui otomatis sampai kick-off,
+        dan tiap konten membawa cap waktu versi yang dipakai. Jangan
+        menambahkan tombol lock, status 'diperiksa oleh X', atau approval
+        flow; app tidak punya login sehingga klaim itu tidak bisa dibuktikan."
+
+    Jadi tiap pembaruan bikin baris BARU, bukan menimpa yang lama. Efeknya
+    sama dengan mengunci tanpa melanggar aturan itu: `prediction_before_kickoff`
+    menyaring `created_at < kickoff_at`, jadi apa pun yang ditulis sesudah
+    peluit tidak bisa menyamar jadi prediksi pra-laga. Yang dijamin app cuma
+    apa yang benar-benar bisa dilacaknya — sesuai prinsip desain nomor 3.
+
+    **`auto_now_add`, BUKAN `auto_now`.** Model lain di file ini pakai
+    `auto_now` (MatchIngest.ingested_at, RawPayload.fetched_at,
+    FieldConflict.detected_at) karena mereka memang mau tahu sentuhan
+    terakhir. Di sini `auto_now` akan menulis ulang cap waktu tiap kali baris
+    disimpan — prediksi yang dibuat sebelum laga mendadak bercap sesudah laga,
+    dan seluruh guna tabel ini lenyap tanpa gejala. Ada test regresinya.
+    """
+
+    match = models.ForeignKey(
+        Match, on_delete=models.CASCADE, related_name='prediction_snapshots'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Catatan bebas analis: kenapa prediksinya berubah dari versi sebelumnya.
+    note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['match', '-created_at'])]
+
+    def __str__(self):
+        return f'Prediksi {self.match} @ {self.created_at:%Y-%m-%d %H:%M}'
+
+    @property
+    def before_kickoff(self):
+        """True kalau versi ini memang dibuat sebelum peluit."""
+        return self.created_at < self.match.kickoff_at
+
+    @property
+    def lead_time(self):
+        """Selisih waktu ke kick-off. Negatif berarti dibuat setelah laga mulai."""
+        return self.match.kickoff_at - self.created_at
+
+
+class HypothesisItem(models.Model):
+    """Satu kartu hipotesis di panel Cek Prediksi.
+
+    Desain minta tiga kartu per laga dengan status KENA / BELUM / MELESET
+    beserta bukti angkanya.
+    """
+
+    class Outcome(models.TextChoices):
+        PENDING = 'BELUM', 'Belum terjawab'
+        HIT = 'KENA', 'Kena'
+        MISS = 'MELESET', 'Meleset'
+
+    snapshot = models.ForeignKey(
+        PredictionSnapshot, on_delete=models.CASCADE, related_name='hypotheses'
+    )
+    order = models.PositiveSmallIntegerField(default=0)
+    # Hipotesisnya sendiri, mis. "MU bikin peluang utama dari sisi kiri".
+    text = models.CharField(max_length=300)
+    # Apa yang harus dilihat untuk menjawabnya — ditulis SEBELUM laga supaya
+    # kriterianya tidak digeser setelah hasilnya kelihatan.
+    evidence_note = models.CharField(max_length=300, blank=True)
+    outcome = models.CharField(
+        max_length=8, choices=Outcome.choices, default=Outcome.PENDING
+    )
+    # Angka yang jadi bukti waktu dievaluasi, mis. "7 dari 11 peluang dari kiri".
+    outcome_note = models.CharField(max_length=300, blank=True)
+    evaluated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['snapshot', 'order']
+
+    def __str__(self):
+        return f'[{self.outcome}] {self.text[:60]}'
+
+
+class LineupSlot(models.Model):
+    """Satu dari 11 posisi di prediksi susunan.
+
+    Handoff: bulatan berlabel posisi + nama, posisi yang belum pasti diberi
+    persentase keyakinan, pemain kunci ditandai. Orientasi tim menyerang ke
+    kanan (bek kanan di bawah, bek kiri di atas) itu urusan render, bukan
+    model — tapi `pitch_x`/`pitch_y` disediakan supaya analis bisa menggeser
+    node kalau formasinya tidak standar.
+    """
+
+    class Position(models.TextChoices):
+        GK = 'GK', 'Kiper'
+        RB = 'RB', 'Bek kanan'
+        CB = 'CB', 'Bek tengah'
+        LB = 'LB', 'Bek kiri'
+        DM = 'DM', 'Gelandang bertahan'
+        CM = 'CM', 'Gelandang tengah'
+        AM = 'AM', 'Gelandang serang'
+        RW = 'RW', 'Sayap kanan'
+        LW = 'LW', 'Sayap kiri'
+        CF = 'CF', 'Penyerang'
+
+    snapshot = models.ForeignKey(
+        PredictionSnapshot, on_delete=models.CASCADE, related_name='lineup_slots'
+    )
+    slot = models.PositiveSmallIntegerField(help_text='1-11')
+    # Boleh kosong: analis bisa yakin formasinya tapi belum yakin siapa yang isi.
+    player = models.ForeignKey(
+        Player, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='predicted_slots',
+    )
+    position = models.CharField(max_length=2, choices=Position.choices)
+    # null = yakin. Terisi = ragu, dan UI menampilkan persentasenya.
+    confidence_pct = models.PositiveSmallIntegerField(null=True, blank=True)
+    is_key = models.BooleanField(default=False)
+    pitch_x = models.FloatField(null=True, blank=True)
+    pitch_y = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['snapshot', 'slot']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['snapshot', 'slot'], name='unique_snapshot_slot'
+            )
+        ]
+
+    def __str__(self):
+        nama = self.player.name if self.player else '(belum ditentukan)'
+        return f'{self.position} {nama}'

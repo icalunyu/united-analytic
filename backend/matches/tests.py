@@ -304,3 +304,130 @@ class PullInjuriesQuotaTests(TestCase):
         dipanggil = self._jalankan(max_calls=1 + MAX_VERIFY_PER_PLAYER)
         dicari = [n for jenis, n in dipanggil if jenis == 'cari']
         self.assertEqual(len(dicari), 1, 'harus berhenti setelah anggaran habis')
+
+
+class PredictionSnapshotTests(TestCase):
+    """Fondasi panel Cek Prediksi — pembeda utama produk menurut handoff.
+
+    Yang diuji di sini bukan CRUD, tapi dua hal yang kalau rusak merusaknya
+    tanpa gejala: cap waktu yang ditulis ulang, dan penyaringan pra-kickoff.
+    """
+
+    def setUp(self):
+        from datetime import datetime, timezone as dt_tz
+
+        from players.models import Team
+
+        self.mu = Team.objects.create(name='Manchester United FC', is_manchester_united=True)
+        self.ipswich = Team.objects.create(name='Ipswich Town FC')
+        self.kickoff = datetime(2026, 8, 30, 15, 30, tzinfo=dt_tz.utc)
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.ipswich, kickoff_at=self.kickoff
+        )
+
+    def _snapshot_pada(self, saat, note=''):
+        """Bikin snapshot lalu paksa created_at-nya.
+
+        auto_now_add mengabaikan nilai yang dikirim waktu create, jadi satu-
+        satunya cara mengatur waktu di test adalah lewat queryset.update().
+        """
+        from matches.models import PredictionSnapshot
+
+        snap = PredictionSnapshot.objects.create(match=self.match, note=note)
+        PredictionSnapshot.objects.filter(pk=snap.pk).update(created_at=saat)
+        snap.refresh_from_db()
+        return snap
+
+    def test_cap_waktu_tidak_ditulis_ulang_saat_disimpan_lagi(self):
+        """REGRESI: kalau auto_now_add jadi auto_now, tabel ini kehilangan gunanya.
+
+        Model lain di file yang sama memakai auto_now (MatchIngest.ingested_at,
+        RawPayload.fetched_at, FieldConflict.detected_at), jadi keliru menyalin
+        polanya itu sangat mungkin. Efeknya: prediksi yang dibuat sebelum laga
+        mendadak bercap sesudah laga, dan Cek Prediksi diam-diam kosong.
+        """
+        from datetime import timedelta
+
+        awal = self.kickoff - timedelta(days=2)
+        snap = self._snapshot_pada(awal)
+
+        snap.note = 'diedit setelah dibuat'
+        snap.save()
+        snap.refresh_from_db()
+
+        self.assertEqual(snap.created_at, awal, 'created_at tidak boleh berubah saat save ulang')
+        self.assertTrue(snap.before_kickoff)
+
+    def test_ambil_versi_terakhir_sebelum_kickoff(self):
+        from datetime import timedelta
+
+        self._snapshot_pada(self.kickoff - timedelta(days=3), 'versi awal')
+        terbaru = self._snapshot_pada(self.kickoff - timedelta(hours=2), 'versi final')
+
+        dipakai = self.match.prediction_before_kickoff()
+        self.assertIsNotNone(dipakai)
+        self.assertEqual(dipakai.pk, terbaru.pk)
+        self.assertEqual(dipakai.note, 'versi final')
+
+    def test_versi_sesudah_peluit_tidak_bisa_menyamar(self):
+        """Inti klaim produknya: analisis dibuat sebelum laga, bukan sesudah fakta.
+
+        Handoff melarang mekanisme kunci, jadi yang menjaga bukan lock melainkan
+        penyaring waktu di query.
+        """
+        from datetime import timedelta
+
+        sah = self._snapshot_pada(self.kickoff - timedelta(hours=1), 'sah')
+        curang = self._snapshot_pada(self.kickoff + timedelta(hours=1), 'ditulis pas jeda')
+
+        dipakai = self.match.prediction_before_kickoff()
+        self.assertEqual(dipakai.pk, sah.pk)
+        self.assertNotEqual(dipakai.pk, curang.pk)
+        self.assertFalse(curang.before_kickoff)
+
+    def test_tanpa_prediksi_pra_laga_mengembalikan_none(self):
+        from datetime import timedelta
+
+        self._snapshot_pada(self.kickoff + timedelta(minutes=5))
+        self.assertIsNone(self.match.prediction_before_kickoff())
+
+    def test_snapshot_menyimpan_hipotesis_dan_susunan(self):
+        from datetime import timedelta
+
+        from matches.models import HypothesisItem, LineupSlot
+        from players.models import Player
+
+        snap = self._snapshot_pada(self.kickoff - timedelta(hours=3))
+        HypothesisItem.objects.create(
+            snapshot=snap, order=1,
+            text='MU bikin peluang utama dari sisi kiri',
+            evidence_note='lebih dari separuh tembakan berawal dari sepertiga kiri',
+        )
+        pemain = Player.objects.create(name='Bruno Fernandes', team=self.mu)
+        LineupSlot.objects.create(
+            snapshot=snap, slot=10, position=LineupSlot.Position.AM,
+            player=pemain, confidence_pct=80, is_key=True,
+        )
+
+        dipakai = self.match.prediction_before_kickoff()
+        self.assertEqual(dipakai.hypotheses.count(), 1)
+        self.assertEqual(dipakai.hypotheses.first().outcome, HypothesisItem.Outcome.PENDING)
+        self.assertEqual(dipakai.lineup_slots.first().player, pemain)
+
+    def test_slot_tidak_boleh_dobel_dalam_satu_snapshot(self):
+        from datetime import timedelta
+
+        from django.db import IntegrityError
+
+        from matches.models import LineupSlot
+
+        snap = self._snapshot_pada(self.kickoff - timedelta(hours=3))
+        LineupSlot.objects.create(snapshot=snap, slot=1, position=LineupSlot.Position.GK)
+        with self.assertRaises(IntegrityError):
+            LineupSlot.objects.create(snapshot=snap, slot=1, position=LineupSlot.Position.CB)
+
+    def test_jeda_ke_kickoff_negatif_kalau_dibuat_sesudah_peluit(self):
+        from datetime import timedelta
+
+        snap = self._snapshot_pada(self.kickoff + timedelta(hours=2))
+        self.assertLess(snap.lead_time.total_seconds(), 0)
