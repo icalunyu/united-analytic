@@ -487,7 +487,11 @@ def _agregat_pemain(rows):
         if r.passes_total:
             d['umpan_akurat'] += r.passes_accurate or 0
             d['umpan_total'] += r.passes_total
-        if r.saves is not None or r.goals_conceded is not None:
+        # HANYA kiper. ESPN nulis goals_conceded ke SEMUA baris pemain, bukan
+        # cuma kiper — jadi tanpa pagar ini bek yang timnya kebobolan 2 dapat
+        # Sv% = 0/(0+2) = 0,0%. Angka nol itu kelihatan seperti data padahal
+        # omong kosong, dan itu jenis kesalahan yang nggak kelihatan salah.
+        if (r.player.position or '') == 'GK':
             d['saves'] += r.saves or 0
             d['kebobolan'] += r.goals_conceded or 0
             d['ada_kiper'] = True

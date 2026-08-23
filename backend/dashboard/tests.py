@@ -258,3 +258,35 @@ class StatistikTests(TestCase):
             self.assertEqual(
                 self.client.get(reverse('dashboard:statistics'), params).status_code, 200
             )
+
+
+class SvPersenHanyaKiperTests(TestCase):
+    """Sv% tidak boleh muncul untuk pemain lapangan.
+
+    Regresi: ESPN menulis goals_conceded ke SEMUA baris pemain, bukan cuma
+    kiper. Tanpa pagar posisi, bek yang timnya kebobolan 2 dapat Sv% =
+    0/(0+2) = 0,0% — dan nol itu kelihatan seperti data.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from matches.models import PlayerMatchStatistics
+        from players.models import Player
+
+        mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        m = Match.objects.create(
+            home_team=mu, away_team=Team.objects.create(name='Ipswich'),
+            kickoff_at=timezone.now(), season=2026,
+            league_name='2026-27 English Premier League', status=Match.Status.FINISHED,
+        )
+        for nama, pos, saves in (('Harry Maguire', 'CB', 0), ('Senne Lammens', 'GK', 3)):
+            PlayerMatchStatistics.objects.create(
+                match=m, team=mu, minutes_played=90, saves=saves, goals_conceded=2,
+                player=Player.objects.create(name=nama, team=mu, position=pos),
+            )
+
+    def test_bek_nggak_dapat_sv_persen(self):
+        r = self.client.get(reverse('dashboard:statistics'), {'musim': 2026})
+        baris = {b['nama']: b for b in r.context['baris']}
+        self.assertIsNone(baris['Harry Maguire']['sv'], 'bek nggak boleh punya Sv%')
+        self.assertEqual(baris['Senne Lammens']['sv'], 60.0)
