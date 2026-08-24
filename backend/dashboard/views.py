@@ -680,3 +680,98 @@ def statistics(request):
             'save_minimum': SAVE_MINIMUM,
         },
     )
+
+
+# ------------------------------------------------------------------ pra laga
+
+H2H_JUMLAH = 5
+
+
+def pre_match(request):
+    """Halaman Pra-laga: identitas laga, prediksi susunan, hipotesis, H2H.
+
+    Dua mode, sesuai handoff:
+    - **Menyiapkan laga** (belum kick-off) — prediksi masih diperbarui otomatis
+      sampai peluit, dan tiap konten membawa cap waktu versinya.
+    - **Laga berjalan · cek prediksi** — yang dibandingkan adalah prediksi
+      TERAKHIR SEBELUM kick-off.
+
+    Handoff melarang mekanisme kunci: *"Jangan menambahkan tombol lock, status
+    'diperiksa oleh X', atau approval flow; app tidak punya login sehingga
+    klaim itu tidak bisa dibuktikan."* Yang menegakkan kejujurannya bukan
+    tombol, tapi `prediction_before_kickoff()` — dia menyaring
+    `created_at < kickoff_at`, jadi apa pun yang ditulis sesudah peluit nggak
+    bisa menyamar jadi prediksi pra-laga.
+    """
+    mu = Team.objects.filter(is_manchester_united=True).first()
+    now = timezone.now()
+
+    match_id = request.GET.get('match')
+    if match_id and match_id.isdigit():
+        match = Match.objects.filter(pk=int(match_id)).first()
+    else:
+        match = (
+            mu_matches()
+            .filter(Q(status__in=LIVE_STATUSES) | Q(kickoff_at__gte=now))
+            .order_by('kickoff_at')
+            .first()
+        )
+
+    if match is None:
+        return render(request, 'dashboard/pre_match.html',
+                      {'active_nav': 'pre_match', 'match': None})
+
+    berjalan = match.status in LIVE_STATUSES
+    selesai = match.status in FINISHED_STATUSES
+    snapshot = match.prediction_before_kickoff()
+
+    slots = []
+    if snapshot:
+        slots = list(
+            snapshot.lineup_slots.select_related('player').order_by('slot')
+        )
+        for s in slots:
+            # Orientasi tayangan televisi: tim menyerang ke KANAN, jadi kiper
+            # di kiri dan bek kiri di ATAS. Koordinat FotMob sudah begitu —
+            # x kecil = dekat gawang sendiri, y kecil = sisi kiri lapangan —
+            # jadi dipetakan langsung tanpa dibalik.
+            s.gaya = (
+                f'left:{(s.pitch_x or 0.5) * 100:.1f}%;'
+                f'top:{(s.pitch_y or 0.5) * 100:.1f}%'
+            )
+
+    # Head to Head: pertemuan terakhir lintas kompetisi.
+    lawan = match.away_team if match.home_team_id == (mu.pk if mu else None) else match.home_team
+    h2h = []
+    if mu and lawan and lawan.pk != mu.pk:
+        h2h = [
+            annotate_result(m)
+            for m in mu_matches()
+            .filter(Q(home_team=lawan) | Q(away_team=lawan))
+            .filter(status__in=FINISHED_STATUSES)
+            .exclude(pk=match.pk)
+            .order_by('-kickoff_at')[:H2H_JUMLAH]
+        ]
+
+    menang = sum(1 for m in h2h if m.mu_result == 'W')
+    seri = sum(1 for m in h2h if m.mu_result == 'D')
+
+    return render(
+        request,
+        'dashboard/pre_match.html',
+        {
+            'active_nav': 'pre_match',
+            'match': match,
+            'lawan': lawan,
+            'berjalan': berjalan,
+            'selesai': selesai,
+            'snapshot': snapshot,
+            'slots': slots,
+            'hipotesis': list(snapshot.hypotheses.all()) if snapshot else [],
+            'h2h': h2h,
+            'h2h_menang': menang,
+            'h2h_seri': seri,
+            'h2h_kalah': len(h2h) - menang - seri,
+            'mundur_hari': (match.kickoff_at - now).days if not selesai else None,
+        },
+    )

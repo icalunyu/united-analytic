@@ -440,3 +440,118 @@ class KartuBebanTests(TestCase):
         r = self.client.get(reverse('dashboard:squad'))
         self.assertContains(r, '450')
         self.assertContains(r, 'riwayat cedera otot')
+
+
+class PraLagaTests(TestCase):
+    """Halaman Pra-laga — PR-01/02/03/04/05.
+
+    Yang paling penting dijaga: pagar pra-kickoff. Handoff melarang mekanisme
+    kunci, jadi yang menegakkan kejujuran panel ini bukan tombol melainkan
+    `prediction_before_kickoff()`.
+    """
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from matches.models import HypothesisItem, LineupSlot, PredictionSnapshot
+        from players.models import Player
+
+        self.td = timedelta
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town')
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan,
+            kickoff_at=timezone.now() + timedelta(days=6),
+            league_name='2026-27 English Premier League', venue='Old Trafford',
+        )
+        self.snapshot = PredictionSnapshot.objects.create(match=self.match)
+        p = Player.objects.create(name='Senne Lammens', team=self.mu, position='GK')
+        LineupSlot.objects.create(
+            snapshot=self.snapshot, slot=1, player=p, position='GK',
+            confidence_pct=60, is_key=True, pitch_x=0.05, pitch_y=0.5,
+        )
+        HypothesisItem.objects.create(
+            snapshot=self.snapshot, order=1, text='MU turun 4-2-3-1',
+            evidence_note='Dasar: 4 dari 5. [cek:formasi=4-2-3-1]',
+        )
+        self.HypothesisItem = HypothesisItem
+        self.PredictionSnapshot = PredictionSnapshot
+
+    def _jadikan_berjalan(self, snapshot_pra_peluit=True):
+        """Geser laga jadi sedang berjalan.
+
+        Cap waktu snapshot HARUS ikut digeser. `created_at` itu auto_now_add,
+        jadi kalau cuma kickoff yang dimundurkan, snapshot-nya jadi
+        PASCA-peluit dan benar-benar ditolak `prediction_before_kickoff()` —
+        itu perilaku yang dijaga, bukan bug.
+        """
+        kickoff = timezone.now() - self.td(minutes=30)
+        Match.objects.filter(pk=self.match.pk).update(
+            status=Match.Status.LIVE, kickoff_at=kickoff
+        )
+        self.match.refresh_from_db()
+        if snapshot_pra_peluit:
+            self.PredictionSnapshot.objects.filter(pk=self.snapshot.pk).update(
+                created_at=kickoff - self.td(days=1)
+            )
+
+    def _get(self, **params):
+        r = self.client.get(reverse('dashboard:pre_match'), params)
+        self.assertEqual(r.status_code, 200)
+        return r
+
+    def test_mode_menyiapkan_laga_sebelum_kickoff(self):
+        r = self._get()
+        self.assertFalse(r.context['berjalan'])
+        self.assertContains(r, 'Menyiapkan laga')
+        self.assertContains(r, 'Hipotesis Taktik')
+        self.assertNotContains(r, 'Laga berjalan')
+
+    def test_mode_cek_prediksi_saat_laga_berjalan(self):
+        self._jadikan_berjalan()
+        r = self._get()
+        self.assertTrue(r.context['berjalan'])
+        self.assertContains(r, 'Laga berjalan')
+        self.assertContains(r, 'Cek Prediksi')
+
+    def test_snapshot_pasca_peluit_TIDAK_dipakai(self):
+        """Pagar yang bikin panel ini berarti. Prediksi yang ditulis sesudah
+        peluit nggak boleh menyamar jadi prediksi pra-laga."""
+        self._jadikan_berjalan(snapshot_pra_peluit=False)
+        r = self._get()
+        self.assertIsNone(r.context['snapshot'])
+        self.assertContains(r, 'Belum ada prediksi tersimpan')
+
+    def test_snapshot_pra_peluit_dipakai(self):
+        self._jadikan_berjalan(snapshot_pra_peluit=True)
+        r = self._get()
+        self.assertEqual(r.context['snapshot'].pk, self.snapshot.pk)
+
+    def test_node_susunan_punya_koordinat(self):
+        r = self._get()
+        slot = r.context['slots'][0]
+        self.assertIn('left:5.0%', slot.gaya)
+        self.assertIn('top:50.0%', slot.gaya)
+
+    def test_persentase_dijelaskan_bukan_peluang_start(self):
+        """Angka telanjang yang gampang disalahartikan wajib dijelaskan."""
+        r = self._get()
+        self.assertContains(r, 'frekuensi historis slot')
+        self.assertContains(r, 'bukan')
+
+    def test_head_to_head_skor_ditulis_United_dulu(self):
+        """Konvensi handoff: MU selalu ditulis lebih dulu, apa pun venue-nya."""
+        Match.objects.create(
+            home_team=self.lawan, away_team=self.mu,
+            kickoff_at=timezone.now() - self.td(days=200),
+            status=Match.Status.FINISHED, home_score=1, away_score=3,
+        )
+        r = self._get()
+        self.assertEqual(len(r.context['h2h']), 1)
+        self.assertEqual(r.context['h2h_menang'], 1)
+        self.assertContains(r, '3&ndash;1')
+
+    def test_tanpa_laga_mendatang_nggak_error(self):
+        Match.objects.all().delete()
+        r = self._get()
+        self.assertIsNone(r.context['match'])

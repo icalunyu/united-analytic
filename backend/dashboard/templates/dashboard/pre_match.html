@@ -1,0 +1,168 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Pra-laga — MU Analytics{% endblock %}
+
+{% block content %}
+{% if not match %}
+<p class="card p-6 text-sm text-gray-500">Belum ada laga mendatang di database.</p>
+{% else %}
+
+{# ---------- PR-01 Bar Identitas Laga ---------- #}
+<div class="card mb-5 p-4">
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    {% if berjalan %}
+      <span class="flex items-center gap-1.5 text-xs font-medium text-[var(--color-mu)]">
+        <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-[var(--color-mu)]"></span>
+        Laga berjalan · cek prediksi
+      </span>
+    {% elif selesai %}
+      <span class="text-xs font-medium text-gray-500">Laga selesai</span>
+    {% else %}
+      <span class="text-xs font-medium text-gray-400">Menyiapkan laga</span>
+    {% endif %}
+  </div>
+  <h1 class="mt-1 text-[22px] font-bold leading-tight text-[var(--color-text-strong)]">
+    {{ match.home_team.name }} <span class="text-gray-600">vs</span> {{ match.away_team.name }}
+  </h1>
+  <div class="mt-1 text-sm text-gray-500">
+    {{ match.league_name }}{% if match.round %} · {{ match.round }}{% endif %}
+    {% if match.venue %} · {{ match.venue }}{% endif %}
+    · {{ match.kickoff_at|date:"D, d M Y H:i" }} WIB
+    {% if mundur_hari is not None and mundur_hari >= 0 %}
+      <span class="text-gray-600">· {{ mundur_hari }} hari lagi</span>
+    {% endif %}
+  </div>
+
+  <div class="mt-3 border-t border-[var(--color-border)] pt-3 text-xs leading-relaxed text-gray-500">
+    {% if snapshot %}
+      Prediksi per <b class="text-gray-400">{{ snapshot.created_at|date:"d M H:i" }}</b>
+      {% if berjalan or selesai %}
+        — versi terakhir sebelum kick-off ({{ snapshot.lead_time }} sebelum peluit).
+        Yang dibandingkan di bawah adalah versi ini, bukan yang ditulis belakangan.
+      {% else %}
+        — angka masih diperbarui otomatis sampai kick-off. Tiap konten yang kamu
+        buat membawa cap waktu versi ini: <i>sampai konten ini diunggah, beginilah
+        prediksi kami.</i>
+      {% endif %}
+    {% else %}
+      <span class="text-amber-400">Belum ada prediksi tersimpan buat laga ini.</span>
+      Jalankan <code>predict_lineup --apply</code>. Prediksi yang nggak tersimpan
+      sebelum kick-off nggak bisa ditambal belakangan.
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(520px,1fr)_380px]">
+  <div class="flex flex-col gap-5">
+
+    {# ---------- PR-04 Cek Prediksi / PR-03 Hipotesis ---------- #}
+    {% if hipotesis %}
+    <div class="card p-4 {% if berjalan or selesai %}border-[rgba(214,38,58,.3)]{% endif %}">
+      <h2 class="mb-1 text-sm font-semibold text-[var(--color-text-strong)]">
+        {% if berjalan or selesai %}Cek Prediksi{% else %}Hipotesis Taktik{% endif %}
+        <span class="font-normal text-gray-500">· {{ hipotesis|length }} dugaan</span>
+      </h2>
+      <p class="mb-3 text-xs text-gray-500">
+        {% if berjalan or selesai %}
+          Dinilai dari data laga ini. Yang belum bisa dinilai otomatis tetap
+          <b>BELUM</b> — app nggak menebak kalimat yang bukan dia yang tulis.
+        {% else %}
+          Dugaan yang tersimpan sebelum kick-off. Sesudah laga, tiap kartu dinilai
+          KENA atau MELESET dari angkanya sendiri.
+        {% endif %}
+      </p>
+      <div class="flex flex-col gap-2">
+        {% for h in hipotesis %}
+        <div class="rounded-lg border-t-2 {% if h.outcome == 'KENA' %}border-emerald-500{% elif h.outcome == 'MELESET' %}border-red-500{% else %}border-amber-400{% endif %} bg-white/[0.02] p-3">
+          <div class="flex items-start justify-between gap-3">
+            <span class="text-sm text-[var(--color-text-strong)]">{{ h.text }}</span>
+            <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold {% if h.outcome == 'KENA' %}bg-emerald-500/15 text-emerald-400{% elif h.outcome == 'MELESET' %}bg-red-500/15 text-red-400{% else %}bg-amber-400/15 text-amber-400{% endif %}">{{ h.outcome }}</span>
+          </div>
+          <div class="mt-1 text-xs text-gray-600">{{ h.evidence_note }}</div>
+          {% if h.outcome_note %}
+          <div class="mt-1 text-xs {% if h.outcome == 'KENA' %}text-emerald-400/80{% elif h.outcome == 'MELESET' %}text-red-400/80{% else %}text-gray-500{% endif %}">{{ h.outcome_note }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ---------- PR-02 Prediksi Susunan ---------- #}
+    <div class="card p-4">
+      <h2 class="mb-1 text-sm font-semibold text-[var(--color-text-strong)]">Prediksi Susunan</h2>
+      <p class="mb-3 text-xs leading-relaxed text-gray-500">
+        Persentase = <b>frekuensi historis slot</b> (mis. 4 dari 5 laga terakhir),
+        <b>bukan</b> peluang pemain start. Ketersediaan pemain belum diperhitungkan.
+        Merah = pemain kunci, kuning = posisi belum pasti.
+      </p>
+      {% if slots %}
+      <div class="relative w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-emerald-950/30" style="padding-top:56%">
+        <div class="absolute inset-0">
+          {# garis tengah + kotak penalti, digambar sendiri — nggak pakai aset #}
+          <div class="absolute left-1/2 top-0 h-full w-px bg-white/10"></div>
+          <div class="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10"></div>
+          <div class="absolute left-0 top-1/4 h-1/2 w-[14%] border-y border-r border-white/10"></div>
+          <div class="absolute right-0 top-1/4 h-1/2 w-[14%] border-y border-l border-white/10"></div>
+          {% for s in slots %}
+          <div class="absolute -translate-x-1/2 -translate-y-1/2 text-center" style="{{ s.gaya }}">
+            <div class="mx-auto flex h-[34px] w-[34px] items-center justify-center rounded-full border text-[10px] font-semibold
+                        {% if s.is_key %}border-[var(--color-mu)] bg-[var(--color-mu)]/20 text-[var(--color-mu)]{% elif s.confidence_pct %}border-amber-400 bg-amber-400/15 text-amber-300{% else %}border-[var(--color-border)] bg-black/40 text-gray-300{% endif %}"
+                 title="{{ s.player.name|default:'(belum ditentukan)' }} — {{ s.get_position_display }}{% if s.confidence_pct %} · ngisi slot ini {{ s.confidence_pct }}% dari laga terakhir{% endif %}">
+              {{ s.position }}
+            </div>
+            <div class="mt-0.5 whitespace-nowrap text-[10px] leading-tight text-gray-300">
+              {{ s.player.last_name|default:s.player.name|default:"—" }}
+            </div>
+            {% if s.confidence_pct %}
+            <div class="text-[9px] leading-none text-amber-400">{{ s.confidence_pct }}%</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="mt-2 text-xs text-gray-600">
+        Menyerang ke kanan — bek kiri di atas, bek kanan di bawah, sama seperti tayangan TV.
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-500">Belum ada prediksi susunan tersimpan.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ---------- kolom kanan ---------- #}
+  <div class="flex flex-col gap-5">
+    {# PR-05 Head to Head #}
+    <div class="card p-4">
+      <h2 class="mb-3 text-sm font-semibold text-[var(--color-text-strong)]">
+        Head to Head{% if lawan %} <span class="font-normal text-gray-500">vs {{ lawan.name }}</span>{% endif %}
+      </h2>
+      {% if h2h %}
+      <div class="flex flex-col gap-1.5">
+        {% for m in h2h %}
+        <a href="{% url 'dashboard:match_detail' m.id %}" class="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-white/5">
+          <span class="w-1 shrink-0 self-stretch rounded {% if m.mu_result == 'W' %}bg-emerald-500{% elif m.mu_result == 'D' %}bg-amber-400{% else %}bg-red-500{% endif %}"></span>
+          <span class="w-14 shrink-0 text-gray-600">{{ m.kickoff_at|date:"d M y" }}</span>
+          <span class="flex-1 truncate text-gray-400">
+            {% if m.home_team.is_manchester_united %}United vs {{ m.away_team.name }}{% else %}United vs {{ m.home_team.name }}{% endif %}
+          </span>
+          <span class="shrink-0 font-mono text-[var(--color-text-strong)]">
+            {% if m.home_team.is_manchester_united %}{{ m.home_score }}&ndash;{{ m.away_score }}{% else %}{{ m.away_score }}&ndash;{{ m.home_score }}{% endif %}
+          </span>
+          <span class="w-8 shrink-0 text-right text-gray-600">{% if m.home_team.is_manchester_united %}K{% else %}T{% endif %}</span>
+        </a>
+        {% endfor %}
+      </div>
+      <div class="mt-3 border-t border-[var(--color-border)] pt-2 text-xs text-gray-500">
+        {{ h2h_menang }} menang · {{ h2h_seri }} imbang · {{ h2h_kalah }} kalah
+        dari {{ h2h|length }} pertemuan terakhir.
+        <span class="text-gray-600">Skor selalu ditulis United dulu; K = kandang, T = tandang.</span>
+      </div>
+      {% else %}
+      <p class="text-xs text-gray-500">Belum ada pertemuan sebelumnya di database.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
