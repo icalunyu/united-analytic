@@ -1566,3 +1566,153 @@ class HeartbeatSumberTests(TestCase):
             last_ok_at=timezone.now() - timedelta(days=3)
         )
         self.assertEqual(self._status(), 'berhenti')
+
+
+class BebanRotasiTests(TestCase):
+    """Rumus LV-08 dari inventaris kartu, ditulis sebagai fungsi murni.
+
+    Handoff Tahap 3 minta begitu eksplisit: "Tulis sebagai fungsi murni dengan
+    tes, bukan query yang tersebar di UI." Satu rumus ini dirujuk tiga kartu:
+    kolom Beban 14 hr (SQ-02), Kandidat Rotasi (LV-08), Duel Kunci (PR-08).
+    """
+
+    def test_rumus_persis_seperti_handoff(self):
+        """skor = 0,5 x beban + 0,3 x kepadatan + 0,2 x riwayat,
+        dengan beban = menit / 450."""
+        from matches.workload import skor_rotasi
+
+        # Tiga laga penuh + jadwal padat + riwayat = semua komponen maksimum.
+        self.assertEqual(skor_rotasi(450, True, True), 1.0)
+        # Cuma beban.
+        self.assertEqual(skor_rotasi(450, False, False), 0.5)
+        # Cuma kepadatan.
+        self.assertEqual(skor_rotasi(0, True, False), 0.3)
+        # Cuma riwayat.
+        self.assertEqual(skor_rotasi(0, False, True), 0.2)
+        self.assertEqual(skor_rotasi(0, False, False), 0.0)
+
+    def test_beban_di_atas_patokan_nggak_dibatasi(self):
+        """600 menit memang lebih berat dari 450, dan kartunya ada justru buat
+        menemukan itu — jadi komponennya sengaja nggak dipotong di 1,0."""
+        from matches.workload import skor_rotasi
+
+        self.assertGreater(skor_rotasi(600, False, False), skor_rotasi(450, False, False))
+
+    def test_menit_kosong_nggak_bikin_error(self):
+        from matches.workload import skor_rotasi
+
+        self.assertEqual(skor_rotasi(None, False, False), 0.0)
+
+    def test_tingkat_kemendesakan(self):
+        from matches.workload import tingkat
+
+        self.assertEqual(tingkat(1.0), 'mendesak')
+        self.assertEqual(tingkat(0.5), 'mendesak')
+        self.assertEqual(tingkat(0.35), 'awasi')
+        self.assertEqual(tingkat(0.1), 'aman')
+
+    def test_deteksi_cedera_otot_sengaja_sempit(self):
+        """'Knock', 'Ill', 'Ankle injury' TIDAK dihitung. Kalau dimasukkan,
+        hampir semua pemain punya riwayat — dan komponen yang selalu bernilai 1
+        nggak membedakan apa-apa."""
+        from matches.workload import cedera_otot
+
+        for otot in ('Hamstring injury', 'Muscle injury', 'Thigh problems',
+                     'Calf injury', 'Groin injury'):
+            self.assertTrue(cedera_otot(otot), otot)
+        for bukan in ('Knock', 'Ill', 'Ankle injury', 'Knee injury', 'Unknown',
+                      'Shoulder injury', 'Corona virus', ''):
+            self.assertFalse(cedera_otot(bukan), bukan)
+
+    def test_alasan_menjelaskan_komponen_yang_aktif(self):
+        from matches.workload import alasan
+
+        teks = alasan(450, True, True)
+        self.assertIn('450 menit', teks)
+        self.assertIn('4 hari', teks)
+        self.assertIn('otot', teks)
+        self.assertNotIn('·', alasan(120, False, False))
+
+
+class BebanSkuadTests(TestCase):
+    """`beban_skuad` — satu-satunya fungsi di modul itu yang menyentuh DB."""
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from players.models import Player
+
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich')
+        self.sekarang = timezone.now()
+        self.timedelta = timedelta
+        self.reguler = Player.objects.create(name='Reguler', team=self.mu)
+        self.cadangan = Player.objects.create(name='Cadangan', team=self.mu)
+
+    def _laga(self, hari_lalu, menit_reguler):
+        from matches.models import PlayerMatchStatistics
+
+        m = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan,
+            kickoff_at=self.sekarang - self.timedelta(days=hari_lalu),
+            status=Match.Status.FINISHED,
+        )
+        PlayerMatchStatistics.objects.create(
+            match=m, player=self.reguler, team=self.mu, minutes_played=menit_reguler
+        )
+        return m
+
+    def test_menit_di_luar_jendela_14_hari_nggak_dihitung(self):
+        from matches.workload import beban_skuad
+
+        self._laga(3, 90)
+        self._laga(20, 90)  # di luar jendela
+        hasil = {r['player'].name: r for r in beban_skuad(self.mu, self.sekarang)}
+        self.assertEqual(hasil['Reguler']['menit'], 90)
+
+    def test_kepadatan_jadwal_berlaku_untuk_seluruh_tim(self):
+        """Laga berikutnya sama buat semua orang, jadi komponen ini nggak
+        boleh beda-beda per pemain."""
+        from matches.workload import beban_skuad
+
+        Match.objects.create(
+            home_team=self.mu, away_team=self.lawan,
+            kickoff_at=self.sekarang + self.timedelta(days=2),
+        )
+        hasil = beban_skuad(self.mu, self.sekarang)
+        self.assertTrue(all(r['jadwal_padat'] for r in hasil))
+
+    def test_laga_jauh_bukan_jadwal_padat(self):
+        from matches.workload import beban_skuad
+
+        Match.objects.create(
+            home_team=self.mu, away_team=self.lawan,
+            kickoff_at=self.sekarang + self.timedelta(days=9),
+        )
+        self.assertFalse(beban_skuad(self.mu, self.sekarang)[0]['jadwal_padat'])
+
+    def test_riwayat_cedera_otot_dari_enam_bulan_terakhir(self):
+        from players.models import Injury
+
+        from matches.workload import beban_skuad
+
+        Injury.objects.create(
+            player=self.reguler, reason='Hamstring injury',
+            start_date=(self.sekarang - self.timedelta(days=30)).date(),
+        )
+        Injury.objects.create(
+            player=self.cadangan, reason='Hamstring injury',
+            start_date=(self.sekarang - self.timedelta(days=400)).date(),
+        )
+        hasil = {r['player'].name: r for r in beban_skuad(self.mu, self.sekarang)}
+        self.assertTrue(hasil['Reguler']['riwayat_otot'])
+        self.assertFalse(hasil['Cadangan']['riwayat_otot'], 'lebih dari 6 bulan')
+
+    def test_urut_dari_yang_paling_mendesak(self):
+        from matches.workload import beban_skuad
+
+        self._laga(2, 90)
+        self._laga(5, 90)
+        hasil = beban_skuad(self.mu, self.sekarang)
+        self.assertEqual(hasil[0]['player'].name, 'Reguler')
+        self.assertGreaterEqual(hasil[0]['skor'], hasil[1]['skor'])

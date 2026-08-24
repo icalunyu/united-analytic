@@ -3,11 +3,11 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 
-from matches import competitions
+from matches import competitions, workload
 from players.provenance import describe_sources
 from matches.models import FieldConflict, Match, MatchEvent, PlayerMatchStatistics
 from matches.momentum import build_momentum
-from players.models import Injury, Player
+from players.models import Injury, Player, Team
 
 LIVE_STATUSES = [Match.Status.LIVE, Match.Status.HALFTIME]
 FINISHED_STATUSES = [
@@ -383,6 +383,20 @@ def squad(request):
     players = Player.objects.filter(team__is_manchester_united=True, is_active=True).order_by(
         'name'
     )
+
+    # Beban 14 hari (LV-08). Rumusnya ditulis sekali di matches/workload.py
+    # karena dirujuk tiga kartu berbeda: kolom ini, Kandidat Rotasi, dan
+    # Duel Kunci.
+    mu = Team.objects.filter(is_manchester_united=True).first()
+    beban = {}
+    if mu:
+        beban = {
+            r['player'].pk: r
+            for r in workload.beban_skuad(mu, timezone.now(), pemain=players)
+        }
+    for p in players:
+        p.beban = beban.get(p.pk)
+
     groups = []
     for label, codes in POSITION_GROUPS:
         members = [p for p in players if p.position in codes]
@@ -398,7 +412,17 @@ def squad(request):
     return render(
         request,
         'dashboard/squad.html',
-        {'active_nav': 'squad', 'groups': groups, 'total': players.count()},
+        {
+            'active_nav': 'squad',
+            'groups': groups,
+            'total': players.count(),
+            'mendesak': [
+                r for r in sorted(beban.values(), key=lambda x: -x['skor'])
+                if r['tingkat'] != 'aman'
+            ][:5],
+            'jendela_hari': workload.JENDELA_HARI,
+            'menit_patokan': workload.MENIT_PATOKAN,
+        },
     )
 
 
