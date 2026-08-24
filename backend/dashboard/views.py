@@ -416,10 +416,14 @@ def squad(request):
             'active_nav': 'squad',
             'groups': groups,
             'total': players.count(),
-            'mendesak': [
-                r for r in sorted(beban.values(), key=lambda x: -x['skor'])
-                if r['tingkat'] != 'aman'
-            ][:5],
+            # Selalu tampilkan lima teratas, bukan cuma yang di atas ambang.
+            # Kartu yang hilang waktu semua pemain aman bikin orang nggak bisa
+            # bedain "nggak ada yang perlu diistirahatkan" dari "fiturnya
+            # rusak" — dan desain LV-08 sendiri punya varian 'aman'.
+            'beban_teratas': sorted(beban.values(), key=lambda x: -x['skor'])[:5],
+            'ada_yang_perlu_diawasi': any(
+                r['tingkat'] != 'aman' for r in beban.values()
+            ),
             'jendela_hari': workload.JENDELA_HARI,
             'menit_patokan': workload.MENIT_PATOKAN,
         },

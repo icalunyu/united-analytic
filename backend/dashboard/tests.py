@@ -411,3 +411,32 @@ class ProvenanceTampilTests(TestCase):
         self.assertEqual(rows[DataSource.FOTMOB]['status'], 'normal')
         # Yang belum pernah menarik harus 'berhenti', bukan diam-diam normal.
         self.assertEqual(rows[DataSource.UNDERSTAT]['status'], 'berhenti')
+
+
+class KartuBebanTests(TestCase):
+    """Kartu Beban 14 Hari harus tetap tampil walau semua pemain aman.
+
+    Kartu yang hilang bikin orang nggak bisa bedain "nggak ada yang perlu
+    diistirahatkan" dari "fiturnya rusak". Desain LV-08 sendiri punya varian
+    'aman', jadi keadaan itu memang bagian dari kartunya.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from players.models import Player
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        Player.objects.create(name='Santai', team=cls.mu, position='CM', is_active=True)
+
+    def test_kartu_tampil_walau_semua_aman(self):
+        r = self.client.get(reverse('dashboard:squad'))
+        self.assertTrue(r.context['beban_teratas'])
+        self.assertFalse(r.context['ada_yang_perlu_diawasi'])
+        self.assertContains(r, 'Beban 14 Hari')
+        self.assertContains(r, 'semuanya aman')
+
+    def test_rumusnya_disebut_di_halaman(self):
+        """Angka skor tanpa rumusnya itu angka telanjang."""
+        r = self.client.get(reverse('dashboard:squad'))
+        self.assertContains(r, '450')
+        self.assertContains(r, 'riwayat cedera otot')
