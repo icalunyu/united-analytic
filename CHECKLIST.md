@@ -2,6 +2,7 @@
 
 Status tiap butir design handoff terhadap kode yang benar-benar ada.
 Diaudit **24 Agustus 2026** dengan membaca file, bukan menebak dari nama.
+Diperbarui sesudah halaman Pra-laga, penyambungan provenance, dan LV-08.
 
 Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **🚫 terblokir**
 
@@ -15,15 +16,15 @@ Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **�
 | Tahap | ✅ | 🟡 | ⬜ | 🚫 | Keadaan |
 |---|--:|--:|--:|--:|---|
 | 0 — Fondasi data | 6 | 7 | 5 | 0 | Tulang punggung berdiri; separuh entitas belum ada |
-| 1 — Penarikan & rekonsiliasi | 4 | 5 | 4 | 1 | Penarikan matang, **tapi nol tampil di UI** |
+| 1 — Penarikan & rekonsiliasi | 7 | 4 | 1 | 1 | **Chip sumber & Kesehatan Sumber akhirnya tampil** |
 | 2 — Halaman rujukan | 8 | 6 | 6 | 3 | **Statistik selesai**; Skuad separuh; Berita nol |
-| 3 — Metrik turunan | 0 | 1 | 5 | 1 | Cuma momentum, dan itu pun belum bertes |
+| 3 — Metrik turunan | 1 | 1 | 4 | 1 | **LV-08 beban 14 hari jadi**, dirujuk 3 kartu |
 | 4 — Pasca laga | 0 | 0 | 7 | 0 | **Nol baris kode** |
-| 5 — Pra laga | 2 | 3 | 6 | 0 | Mesinnya jadi, **halamannya nol** |
+| 5 — Pra laga | 5 | 1 | 5 | 0 | **Halaman Pra-laga hidup** — PR-01/02/03/04/05 |
 | 6 — Live | 0 | 3 | 9 | 0 | Belum dimulai |
-| Lintas halaman | 0 | 6 | 5 | 0 | Prinsip desain belum terpasang di UI |
+| Lintas halaman | 3 | 4 | 4 | 0 | Chip sumber, Kesehatan Sumber, Konflik tampil |
 
-**192 test lulus.** Enam halaman hidup: `/`, `/jadwal/`, `/skuad/`, `/statistik/`, `/cedera/`, `/match/<id>/`.
+**220 test lulus.** Tujuh halaman hidup: `/`, `/jadwal/`, `/pra/`, `/skuad/`, `/statistik/`, `/cedera/`, `/match/<id>/`.
 
 ---
 
@@ -63,8 +64,9 @@ Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **�
 | 🟡 | Pendeteksi konflik | 150 `FieldConflict`, tapi cuma 2 command yang mencatat |
 | 🟡 | Data se-liga untuk kalimat pembanding | Tidak ada agregat musim tersimpan |
 | 🟡 | Test fondasi | `source_health.py` nol test |
-| ⬜ | **Chip `sumber: A+C` di UI** | `describe_sources()` lengkap & bertes, **nol rujukan di `dashboard/`** |
-| ⬜ | Status kesegaran feed di bar atas | Butuh context processor + komponen |
+| ✅ | **Chip `sumber: A+C` di UI** | Tampil di 42 baris Statistik |
+| ✅ | Status kesegaran feed | Panel Kesehatan Sumber di semua halaman |
+| ✅ | Denyut nadi sumber | `SourceHeartbeat` — feed sehat tanpa data baru bukan feed mati |
 | ⬜ | Halaman Skuad menampilkan konflik | Kartu SQ-01 belum ada |
 | ⬜ | Pilihan analis tersimpan | Tidak ada tempat menyimpannya |
 | 🚫 | Konflik ketersediaan dari dua feed cedera | **Cuma Highlightly** — tidak ada yang bisa berselisih |
@@ -102,9 +104,9 @@ yang akhirnya terbukti, dan riwayat itu baru ada setelah feed berjalan lama.
 
 | | Butir | Catatan |
 |---|---|---|
+| ✅ | **Beban 14 hari (LV-08)** | `matches/workload.py`, fungsi murni bertes; tampil di Skuad |
 | 🟡 | Momentum | Ada di `matches/momentum.py`, **tapi `build_momentum` sendiri belum punya test** |
 | ⬜ | PPDA | Tidak ada yang memblokir versi per-laga |
-| ⬜ | Beban 14 hari (LV-08) | **Dirujuk 3 kartu lain** — ini yang paling banyak membuka |
 | ⬜ | Nilai pemain (LV-06/PS-03) | Bobot per aksi belum ditetapkan |
 | ⬜ | Bola kedua | Rumus belum dispesifikasikan, datanya juga tidak ada |
 | 🚫 | xT (expected threat) | Butuh event umpan berkoordinat yang tidak kita punya |
@@ -120,11 +122,11 @@ Nilai Pemain (PS-03), Saved Moments (PS-04), Generator Prompt (PS-05).
 |---|---|---|
 | ✅ | Penyimpanan prediksi bercap waktu | `PredictionSnapshot` + `LineupSlot` + `HypothesisItem` |
 | ✅ | Kriteria selesai handoff | Terpenuhi **di lapisan data** — 2 snapshot tersimpan pra-kickoff |
-| 🟡 | Prediksi Susunan (PR-02) | Mesinnya jadi & teruji, **tidak ada halaman** |
-| 🟡 | Hipotesis Taktik (PR-03) | 4 kandidat tersimpan; spesifikasi minta pola LAWAN dari 8 laga |
-| 🟡 | Cek Prediksi (PR-04) | Penilai jadi & teruji, **tidak ada panel** |
-| ⬜ | Halaman Pra + Bar Identitas Laga (PR-01) | |
-| ⬜ | Head to Head (PR-05) | Data ada dan tebal |
+| ✅ | **Halaman Pra + Bar Identitas (PR-01)** | Dua mode: Menyiapkan laga / Laga berjalan |
+| ✅ | **Prediksi Susunan (PR-02)** | Lapangan 11 node, orientasi TV, digambar tanpa aset |
+| ✅ | **Cek Prediksi (PR-04)** | Kartu KENA/BELUM/MELESET, dinilai `evaluate_hypotheses` |
+| ✅ | **Head to Head (PR-05)** | Skor selalu ditulis United dulu |
+| 🟡 | Hipotesis Taktik (PR-03) | Tampil, tapi spesifikasi minta pola LAWAN dari 8 laga |
 | ⬜ | Pemain Kunci (PR-06) | Butuh tolok ukur liga per posisi |
 | ⬜ | Profil Lawan (PR-07) | Butuh PPDA + persentil |
 | ⬜ | Duel Kunci (PR-08) | |
@@ -140,11 +142,11 @@ tanpa UI. Handoff tegas: **bangun mode putar ulang dulu, jangan mode langsung**.
 
 | | Butir | Catatan |
 |---|---|---|
-| 🟡 | Jejak sumber per field | Datanya 100%, **tampilannya nol** |
-| 🟡 | Panel Kesehatan Sumber | Fungsinya ada, nol pemanggil |
+| ✅ | Jejak sumber per field | Datanya 100%, **dan sekarang tampil** |
+| ✅ | Panel Kesehatan Sumber | Di semua halaman, dengan denyut nadi |
+| ✅ | Konflik antar sumber ditandai | Kartu Konflik di Statistik |
 | 🟡 | Rangka aplikasi | Rel nav kurang 4 halaman; belum ada bar atas |
 | 🟡 | Design token | **Tipografi belum dipasang** — Google Fonts tidak dimuat |
-| ⬜ | Chip `sumber: A+C` di kartu | |
 | ⬜ | Konvensi skor: MU selalu ditulis lebih dulu | Belum ada helper terpusat |
 | ⬜ | Indikator kekuatan bukti (3/3 · 2/3) | Prinsip desain no. 4 |
 | ⬜ | Toggle tampil/sembunyi chip sumber | |
@@ -154,18 +156,37 @@ tanpa UI. Handoff tegas: **bangun mode putar ulang dulu, jangan mode langsung**.
 
 ## Yang direkomendasikan berikutnya
 
-**1. Halaman Pra-laga.** Paling banyak nilai per usaha: mesinnya sudah jadi,
-teruji, dan sudah berisi data nyata — yang kurang cuma halamannya. Sekaligus
-menghidupkan Cek Prediksi, yang handoff sebut pembeda utama produk.
+**1. Pipeline Berita.** Sumbernya sudah diriset dan diuji hidup (24 Agu):
+Sky Sports feed khusus MU (`rss/11667`), Guardian Open Platform (gratis
+non-komersial, 500/hari), Manchester Evening News, plus kanal YouTube resmi
+klub dan Fabrizio Romano.
 
-**2. Sambungkan yang sudah ada tapi tak terlihat.** Tiga hal matang yang nol
-dipakai UI: `describe_sources()` (chip sumber), `source_health()` (panel
-Kesehatan Sumber), dan `FieldConflict` (150 baris tanpa tampilan). Murah, dan
-langsung menegakkan dua prinsip desain sekaligus.
+**Dua sumber harus dicoret, dan bukan karena teknis.** The Athletic melarang
+eksplisit *"creating archived or cached data sets"* — itu persis
+menggambarkan tabel berita kita, dan konsekuensinya **tidak ada jalur sah
+untuk Ornstein** karena ia hanya menulis di sana. BBC melarang *"plucking
+metadata from our RSS feeds"*. Keduanya larangan tertulis.
 
-**3. Beban 14 hari (LV-08).** Satu rumus yang dirujuk tiga kartu berbeda —
-kolom Skuad, Kandidat Rotasi, dan Duel Kunci.
+Tiga jebakan yang sudah teridentifikasi sebelum satu baris kode ditulis:
+- **Kepemilikan bersama.** MEN, Mirror, Express, Daily Star semuanya Reach plc.
+  Menghitungnya sebagai sumber terpisah bikin "6 sumber sepakat" bohong —
+  hitung per **grup penerbit**.
+- **Satu sumber asli, enam penyalin.** Mayoritas berita transfer mengutip
+  Romano. Simpan `sumber_asal_dikutip`, bukan cuma jumlah.
+- **Feed WordPress mengirim artikel UTUH** di `content:encoded`. Parser wajib
+  membuangnya sebelum menyentuh DB, atau kita menyalin artikel tanpa sadar.
 
-**Butuh keputusanmu, bukan kerja teknis:**
-- **Berita** — sumbernya dari mana?
-- **Sumber cedera kedua** — tanpa ini panel Konflik Sumber kosong permanen.
+**2. Sumber cedera kedua: Fantasy Premier League API.** Gratis, tanpa key,
+satu panggilan/hari, dan memberi ketiga hal yang desain minta: status, teks
+kembali, umur data. Konfliknya sudah nyata — Amad Diallo dianggap bugar oleh
+FotMob tapi *"75% chance of playing"* oleh FPL. Ini yang membuka panel
+Konflik Sumber di Skuad.
+
+Sekaligus menjawab misteri lama: **263 dari 264 entri RETURNED bukan bug
+kita.** Highlightly ternyata feed **riwayat karier**, bukan ketersediaan —
+entri terbaru Mason Mount berakhir September 2021. Turunkan perannya jadi
+sumber riwayat saja.
+
+**3. Tahap 4 — Pasca laga.** Nol dari tujuh, dan datanya sudah diam (laga
+selesai), jadi paling mudah diuji. Handoff menaruhnya sebelum Live justru
+karena itu.
