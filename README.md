@@ -181,6 +181,12 @@ Server ini (DomaiNesia, `musafar.web.id`) udah pernah dipakai buat deploy app Dj
    touch tmp/restart.txt   # trigger restart Passenger — selalu paling akhir
    ```
    Selalu verifikasi kode yang di server benar-benar berubah (mis. `grep` baris yang baru), jangan percaya "deploy sukses" begitu saja.
+
+   **Kalau perubahannya nggak kelihatan padahal filenya udah bener di server**, kemungkinan besar bytecode lama masih kepakai. `touch tmp/restart.txt` doang kadang nggak cukup:
+   ```bash
+   rm -rf ~/mu-analytics/<app>/__pycache__ && touch ~/mu-analytics/tmp/restart.txt
+   ```
+   Gejalanya menipu: `grep` di server nunjukin kode baru, tapi halamannya masih nampilin perilaku lama.
 6. **Cron Job** (cPanel) — jadwalkan `pull_fixtures_fd`/`pull_match_events_espn`/dkk berkala (tiap beberapa menit pas matchday, harian di luar itu) supaya data nggak statis dan hemat kuota API.
 
 ## Backup
