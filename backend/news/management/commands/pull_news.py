@@ -91,7 +91,7 @@ class Command(BaseCommand):
                         'title': it['title'][:400],
                         'published_at': it['published_at'],
                         'author': (it['author'] or '')[:160],
-                        'quoted_source': dikutip_siapa(it['title']),
+                        'quoted_source': dikutip_siapa(it['title'], it['author']),
                     },
                 )
                 baru += 1 if dibuat else 0

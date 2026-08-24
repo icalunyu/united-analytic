@@ -137,3 +137,25 @@ class KesepakatanTests(TestCase):
         r = self.client.get(reverse('dashboard:news'))
         self.assertContains(r, 'diisi manual')
         self.assertContains(r, "mengarang angka sentimen")
+
+
+class KutipanDariPenulisTests(SimpleTestCase):
+    """Wartawan yang MENULIS sendiri harus ikut tertandai.
+
+    Kolom eksklusif Romano di CaughtOffside tercatat lewat `dc:creator`, bukan
+    lewat judul. Tanpa mengecek penulis, tulisan Romano sendiri malah nggak
+    tertandai berasal dari Romano — padahal itu kasus yang paling kuat.
+    """
+
+    def test_dari_judul(self):
+        self.assertEqual(dikutip_siapa('Romano: United close in'), 'Romano')
+
+    def test_dari_penulis(self):
+        self.assertEqual(dikutip_siapa('United close in on striker',
+                                       'Fabrizio Romano'), 'Romano')
+
+    def test_bukan_keduanya(self):
+        self.assertEqual(dikutip_siapa('United win 3-0', 'Mehdi Gokal'), '')
+
+    def test_penulis_kosong_nggak_error(self):
+        self.assertEqual(dikutip_siapa('United win', None), '')

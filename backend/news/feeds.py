@@ -39,6 +39,11 @@ FEEDS = [
      'https://www.independent.co.uk/topic/manchester-united/rss'),
     ('Fabrizio Romano', 'Fabrizio Romano', 'C',
      'https://www.youtube.com/feeds/videos.xml?channel_id=UCX1em-uaFMS02Rrk_Bowyng'),
+    # Feed umum semua klub — disaring `tentang_mu`. Ditambahkan buat menangkap
+    # kolom eksklusif Fabrizio Romano, yang judulnya rapi (nggak kapital penuh
+    # dan penuh emoji seperti judul YouTube-nya). Hasil MU-nya memang tipis:
+    # dari 10 item terbaru waktu dipasang, cuma 1 yang tentang MU.
+    ('CaughtOffside', 'CaughtOffside', 'C', 'https://www.caughtoffside.com/feed/'),
     ('The Peoples Person', 'The Peoples Person', 'C',
      'https://thepeoplesperson.com/feed/'),
     ('United In Focus', 'United In Focus', 'C', 'https://unitedinfocus.com/feed/'),
@@ -101,11 +106,18 @@ def _waktu(teks):
     return waktu.astimezone(dt_tz.utc)
 
 
-def dikutip_siapa(judul):
-    """Nama wartawan yang disebut di judul, kalau ada."""
-    for nama in DIKUTIP:
-        if re.search(rf'\b{nama}\b', judul, re.I):
-            return nama
+def dikutip_siapa(judul, penulis=''):
+    """Nama wartawan yang disebut di judul ATAU yang menulisnya sendiri.
+
+    Cek penulis penting buat CaughtOffside: kolom eksklusif Romano di sana
+    tercatat lewat `dc:creator`, bukan lewat judul. Tanpa itu, tulisan Romano
+    sendiri malah nggak tertandai sebagai berasal dari Romano — padahal itu
+    justru kasus yang paling kuat.
+    """
+    for sumber in (judul or '', penulis or ''):
+        for nama in DIKUTIP:
+            if re.search(rf'\b{nama}\b', sumber, re.I):
+                return nama
     return ''
 
 
