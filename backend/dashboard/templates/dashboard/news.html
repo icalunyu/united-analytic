@@ -1,0 +1,103 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Berita — MU Analytics{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Berita</h1>
+    <p class="text-sm text-gray-500">{{ total }} berita tersimpan</p>
+  </div>
+  <div class="max-w-sm text-right text-xs leading-relaxed text-gray-500">
+    <b class="text-emerald-400">A</b> boleh langsung jadi konten ·
+    <b class="text-amber-400">B</b> harus disebut belum pasti ·
+    <b class="text-red-400">C</b> tidak diangkat.
+  </div>
+</div>
+
+<div class="mb-4 flex flex-wrap items-center gap-2">
+  <a href="?" class="rounded-full border px-3 py-1 text-xs font-medium {% if not tier_aktif %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">Semua</a>
+  {% for kode, label in tiers %}
+  <a href="?tier={{ kode }}" class="rounded-full border px-3 py-1 text-xs font-medium {% if tier_aktif == kode %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-mu)]{% else %}border-[var(--color-border)] text-gray-400 hover:text-white{% endif %}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(520px,1fr)_340px]">
+  <div class="card p-0">
+    {% if item %}
+    <ul class="divide-y divide-[var(--color-border)]/60">
+      {% for n in item %}
+      <li class="p-3">
+        <div class="flex items-start gap-2">
+          <span class="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold
+                       {% if n.tier == 'A' %}bg-emerald-500/15 text-emerald-400{% elif n.tier == 'B' %}bg-amber-400/15 text-amber-400{% else %}bg-red-500/15 text-red-400{% endif %}">{{ n.tier }}</span>
+          <div class="min-w-0 flex-1">
+            <a href="{{ n.url }}" target="_blank" rel="noopener noreferrer"
+               class="text-sm text-[var(--color-text-strong)] hover:text-[var(--color-mu)]">{{ n.title }}</a>
+            <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-600">
+              <span class="text-gray-500">{{ n.publisher }}</span>
+              {% if n.author %}<span>· {{ n.author }}</span>{% endif %}
+              {% if n.published_at %}<span>· {{ n.published_at|timesince }} lalu</span>{% endif %}
+              {% if n.quoted_source %}<span class="text-amber-400">· mengutip {{ n.quoted_source }}</span>{% endif %}
+            </div>
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="p-6 text-sm text-gray-500">Belum ada berita. Jalankan <code>pull_news</code>.</p>
+    {% endif %}
+  </div>
+
+  <div class="flex flex-col gap-5">
+    <div class="card p-4">
+      <h2 class="mb-1 text-sm font-semibold text-[var(--color-text-strong)]">
+        Kesepakatan Penerbit
+      </h2>
+      <p class="mb-3 text-xs leading-relaxed text-gray-500">
+        Nama yang disebut di judul oleh <b>grup penerbit berbeda</b> dalam
+        {{ jendela_jam }} jam terakhir. Dihitung per <b>grup kepemilikan</b>, bukan
+        per artikel — Manchester Evening News, Mirror, Express, dan Daily Star
+        semuanya Reach plc, jadi menghitungnya sebagai empat sumber bikin
+        angkanya bohong.
+      </p>
+      {% if kesepakatan %}
+      <div class="flex flex-col gap-2">
+        {% for k in kesepakatan %}
+        <div class="rounded-lg bg-white/[0.02] p-2">
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-sm font-medium text-[var(--color-text-strong)]">{{ k.nama }}</span>
+            <span class="shrink-0 text-xs {% if k.jumlah_grup >= 3 %}text-emerald-400{% else %}text-amber-400{% endif %}">
+              {{ k.jumlah_grup }} grup
+            </span>
+          </div>
+          <div class="mt-0.5 text-[11px] text-gray-600">{{ k.grup|join:" · " }}</div>
+          {% if k.dikutip %}
+          <div class="mt-0.5 text-[11px] text-amber-400">
+            semuanya mengutip {{ k.dikutip|join:", " }} — satu sumber asli, bukan {{ k.jumlah_grup }}
+          </div>
+          {% endif %}
+          <div class="mt-1 truncate text-[11px] text-gray-500">{{ k.contoh.title }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-xs text-gray-500">
+        Belum ada nama yang disebut lebih dari satu grup penerbit dalam
+        {{ jendela_jam }} jam terakhir.
+      </p>
+      {% endif %}
+    </div>
+
+    <div class="card p-4">
+      <h2 class="mb-1 text-sm font-semibold text-[var(--color-text-strong)]">Sentimen Fans</h2>
+      <p class="text-xs leading-relaxed text-gray-500">
+        Belum ada. Desain menyebut angka ini <b>diisi manual</b> dari polling
+        story dan kolom komentar — bukan hasil hitungan otomatis. App nggak
+        akan mengarang angka sentimen dari judul berita.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

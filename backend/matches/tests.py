@@ -1716,3 +1716,111 @@ class BebanSkuadTests(TestCase):
         hasil = beban_skuad(self.mu, self.sekarang)
         self.assertEqual(hasil[0]['player'].name, 'Reguler')
         self.assertGreaterEqual(hasil[0]['skor'], hasil[1]['skor'])
+
+
+class KetersediaanFplTests(TestCase):
+    """`pull_availability_fpl` — sumber ketersediaan KEDUA.
+
+    Sebelum ini cuma Highlightly, jadi panel Konflik Sumber nggak pernah bisa
+    terisi. Dan Highlightly ternyata bukan feed ketersediaan sama sekali: dia
+    riwayat karier, entri terbaru Mason Mount berakhir September 2021 — itu
+    yang bikin 263 dari 264 entri MU berstatus RETURNED.
+    """
+
+    def setUp(self):
+        from players.models import Player
+
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.bruno = Player.objects.create(name='Bruno Fernandes', team=self.mu, is_active=True)
+        self.amad = Player.objects.create(name='Amad Diallo', team=self.mu, is_active=True)
+        self.muda = Player.objects.create(name='Pemain Muda', team=self.mu, is_active=True)
+
+    def _payload(self):
+        return {
+            'teams': [{'id': 16, 'name': 'Man Utd'}],
+            'elements': [
+                {'team': 16, 'first_name': 'Bruno', 'second_name': 'Borges Fernandes',
+                 'web_name': 'B.Fernandes', 'status': 'a', 'news': '',
+                 'news_added': '2026-07-23T12:01:23.321726Z',
+                 'chance_of_playing_next_round': 100},
+                {'team': 16, 'first_name': 'Amad', 'second_name': 'Diallo',
+                 'web_name': 'Diallo', 'status': 'd',
+                 'news': 'Unspecified injury - 75% chance of playing',
+                 'news_added': '2026-08-22T11:00:08.617283Z',
+                 'chance_of_playing_next_round': 75},
+            ],
+        }
+
+    def _jalankan(self):
+        from io import StringIO
+        from unittest.mock import patch
+
+        from django.core.management import call_command
+
+        class RespPalsu:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            @staticmethod
+            def json():
+                return KetersediaanFplTests._payload_statis
+
+        KetersediaanFplTests._payload_statis = self._payload()
+        out = StringIO()
+        with patch('requests.get', return_value=RespPalsu()):
+            call_command('pull_availability_fpl', stdout=out)
+        return out.getvalue()
+
+    def test_status_dipetakan(self):
+        from players.models import DataSource, PlayerAvailability
+
+        self._jalankan()
+        a = {p.player.name: p for p in PlayerAvailability.objects.filter(source=DataSource.FPL)}
+        self.assertEqual(a['Bruno Fernandes'].status, PlayerAvailability.Status.FIT)
+        self.assertEqual(a['Amad Diallo'].status, PlayerAvailability.Status.DOUBTFUL)
+        self.assertEqual(a['Amad Diallo'].chance_pct, 75)
+
+    def test_umur_data_dari_SUMBER_bukan_waktu_tarik(self):
+        """`news_added` FPL itu kapan KABARNYA berubah, bukan kapan cron jalan.
+        Ini yang dipakai kolom 'umur data' di panel Konflik Sumber."""
+        from players.models import DataSource, PlayerAvailability
+
+        self._jalankan()
+        amad = PlayerAvailability.objects.get(
+            player=self.amad, source=DataSource.FPL
+        )
+        self.assertIsNotNone(amad.source_updated_at)
+        self.assertEqual(amad.source_updated_at.year, 2026)
+        self.assertEqual(amad.source_updated_at.month, 8)
+        self.assertNotEqual(amad.source_updated_at, amad.fetched_at)
+
+    def test_pemain_di_luar_cakupan_ditandai_TIDAK_DICAKUP_bukan_bugar(self):
+        """Diam-diam menganggap pemain yang nggak dicakup sebagai 'bugar' itu
+        persis jenis kesalahan yang bikin panel ini nggak bisa dipercaya."""
+        from players.models import DataSource, PlayerAvailability
+
+        self._jalankan()
+        muda = PlayerAvailability.objects.get(player=self.muda, source=DataSource.FPL)
+        self.assertEqual(muda.status, PlayerAvailability.Status.UNKNOWN)
+        self.assertNotEqual(muda.status, PlayerAvailability.Status.FIT)
+
+    def test_nama_resmi_FPL_dicocokkan_ke_nama_umum(self):
+        """FPL nulis 'Bruno Borges Fernandes', DB kita 'Bruno Fernandes'."""
+        from players.models import DataSource, PlayerAvailability
+
+        self._jalankan()
+        self.assertTrue(
+            PlayerAvailability.objects.filter(
+                player=self.bruno, source=DataSource.FPL
+            ).exists()
+        )
+
+    def test_idempoten(self):
+        from players.models import DataSource, PlayerAvailability
+
+        self._jalankan()
+        n = PlayerAvailability.objects.filter(source=DataSource.FPL).count()
+        self._jalankan()
+        self.assertEqual(PlayerAvailability.objects.filter(source=DataSource.FPL).count(), n)

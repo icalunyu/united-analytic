@@ -775,3 +775,74 @@ def pre_match(request):
             'mundur_hari': (match.kickoff_at - now).days if not selesai else None,
         },
     )
+
+
+# ------------------------------------------------------------------- berita
+
+BERITA_JUMLAH = 40
+KESEPAKATAN_JAM = 48
+KESEPAKATAN_MIN_GRUP = 2
+
+
+def news(request):
+    """Halaman Berita: umpan bertingkat + kesepakatan antar penerbit.
+
+    Aturan redaksi dari handoff: **A boleh langsung jadi konten, B harus
+    disebut belum pasti, C tidak diangkat.** Aturan itu ditulis di UI, bukan
+    cuma di dokumen — kalau cuma di dokumen, ia nggak menolong siapa pun yang
+    sedang buru-buru bikin konten.
+    """
+    from datetime import timedelta
+
+    from news.feeds import nama_di_judul
+    from news.models import NewsItem, NewsSourceTier
+
+    tier = request.GET.get('tier') or ''
+    item = NewsItem.objects.all()
+    if tier in NewsSourceTier.values:
+        item = item.filter(tier=tier)
+    item = list(item[:BERITA_JUMLAH])
+
+    # Kesepakatan dihitung per GRUP PENERBIT, bukan per artikel dan bukan per
+    # penerbit. Reach plc memiliki MEN, Mirror, Express, dan Daily Star —
+    # menghitungnya sebagai empat sumber bikin angkanya bohong: itu satu ruang
+    # redaksi menerbitkan ulang.
+    batas = timezone.now() - timedelta(hours=KESEPAKATAN_JAM)
+    per_nama = {}
+    for it in NewsItem.objects.filter(published_at__gte=batas):
+        for nama in nama_di_judul(it.title):
+            d = per_nama.setdefault(nama, {'grup': set(), 'item': [], 'dikutip': set()})
+            d['grup'].add(it.publisher_group)
+            d['item'].append(it)
+            if it.quoted_source:
+                d['dikutip'].add(it.quoted_source)
+
+    kesepakatan = sorted(
+        (
+            {
+                'nama': nama,
+                'grup': sorted(d['grup']),
+                'jumlah_grup': len(d['grup']),
+                'jumlah_item': len(d['item']),
+                'dikutip': sorted(d['dikutip']),
+                'contoh': d['item'][0],
+            }
+            for nama, d in per_nama.items()
+            if len(d['grup']) >= KESEPAKATAN_MIN_GRUP
+        ),
+        key=lambda x: (-x['jumlah_grup'], -x['jumlah_item']),
+    )[:8]
+
+    return render(
+        request,
+        'dashboard/news.html',
+        {
+            'active_nav': 'news',
+            'item': item,
+            'tier_aktif': tier,
+            'tiers': NewsSourceTier.choices,
+            'kesepakatan': kesepakatan,
+            'jendela_jam': KESEPAKATAN_JAM,
+            'total': NewsItem.objects.count(),
+        },
+    )

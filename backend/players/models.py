@@ -14,6 +14,8 @@ class DataSource(models.TextChoices):
     PREMIER_LEAGUE = 'premier_league', 'Premier League (PulseLive)'
     UNDERSTAT = 'understat', 'Understat (xG)'
     FOTMOB = 'fotmob', 'FotMob'
+    FPL = 'fpl', 'Fantasy Premier League'
+    NEWS = 'news', 'Umpan berita'
 
 
 class Team(models.Model):
@@ -133,3 +135,65 @@ class Injury(models.Model):
 
     def __str__(self):
         return f'{self.player.name} - {self.reason} ({self.status})'
+
+
+class PlayerAvailability(models.Model):
+    """Status ketersediaan pemain MENURUT SATU SUMBER.
+
+    Kenapa per-sumber, bukan satu status gabungan: panel Konflik Sumber di
+    desain justru minta **dua kotak berdampingan** — sumber A bilang apa,
+    sumber D bilang apa, masing-masing dengan umur datanya. Kalau kita gabung
+    duluan jadi satu nilai, konfliknya hilang sebelum sempat ditampilkan, dan
+    analis nggak punya bahan buat memutuskan.
+
+    Beda dari `Injury`, dan bedanya penting. `Injury` itu RIWAYAT — satu baris
+    per kejadian cedera, punya tanggal mulai dan selesai. Ini KEADAAN SEKARANG,
+    satu baris per (pemain, sumber), ditimpa tiap penarikan.
+
+    Pelajaran yang mahal: Highlightly selama ini dipakai sebagai sumber status
+    dan hasilnya 263 dari 264 entri MU berstatus RETURNED. Sesudah diperiksa,
+    Highlightly ternyata feed RIWAYAT KARIER — entri terbaru Mason Mount
+    berakhir September 2021. Yang salah bukan kodenya, tapi harapan kita
+    terhadap sumbernya.
+    """
+
+    class Status(models.TextChoices):
+        FIT = 'FIT', 'Bugar'
+        DOUBTFUL = 'DOUBT', 'Diragukan'
+        OUT = 'OUT', 'Absen'
+        SUSPENDED = 'SUSP', 'Skorsing'
+        LOANED = 'LOAN', 'Dipinjamkan'
+        UNKNOWN = 'UNK', 'Tidak dicakup sumber'
+
+    player = models.ForeignKey(
+        Player, on_delete=models.CASCADE, related_name='availability'
+    )
+    source = models.CharField(max_length=30, choices=DataSource.choices)
+    status = models.CharField(max_length=6, choices=Status.choices)
+    # Teks apa adanya dari sumbernya, mis. 'Foot injury - 75% chance of playing'.
+    note = models.CharField(max_length=255, blank=True)
+    # Derajat keraguan kalau sumbernya ngasih (FPL: 0/25/50/75/100).
+    chance_pct = models.PositiveSmallIntegerField(null=True, blank=True)
+    expected_return = models.DateField(null=True, blank=True)
+    # Kapan SUMBERNYA memperbarui info ini — bukan kapan kita menariknya.
+    # Ini yang dipakai kolom "umur data" di panel Konflik Sumber; tanpa ini
+    # kita cuma tahu kapan cron jalan, bukan kapan kabarnya berubah.
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    fetched_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['player__name', 'source']
+        verbose_name_plural = 'player availability'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['player', 'source'], name='unique_player_source_availability'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.player.name}: {self.get_status_display()} ({self.source})'
+
+    @property
+    def bermasalah(self):
+        """True kalau status ini bukan 'bugar' — dipakai buat menyaring UI."""
+        return self.status not in (self.Status.FIT, self.Status.UNKNOWN)
