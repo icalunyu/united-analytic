@@ -12,7 +12,7 @@ kalau diam 3 jam.
 
 from django.utils import timezone
 
-from matches.models import MatchIngest
+from matches.models import MatchIngest, SourceHeartbeat
 from players.models import DataSource
 
 # Ambang per sumber dalam jam: (masih normal, mulai patut dicurigai).
@@ -56,7 +56,16 @@ def source_health(sources=None):
 
     for source in tracked:
         latest = MatchIngest.objects.filter(source=source).order_by('-ingested_at').first()
-        hours = (now - latest.ingested_at).total_seconds() / 3600 if latest else None
+        terakhir = latest.ingested_at if latest else None
+
+        # Heartbeat menang kalau lebih baru. Sesudah penyaring inkremental,
+        # feed yang sehat bisa berhari-hari nggak nambah MatchIngest karena
+        # emang nggak ada laga baru — dan itu jawaban yang SAH, bukan mati.
+        beat = SourceHeartbeat.objects.filter(source=source).first()
+        if beat and (terakhir is None or beat.last_ok_at > terakhir):
+            terakhir = beat.last_ok_at
+
+        hours = (now - terakhir).total_seconds() / 3600 if terakhir else None
         warn, stop = THRESHOLDS.get(source, DEFAULT_THRESHOLD)
 
         if hours is None or hours >= stop:
@@ -70,7 +79,7 @@ def source_health(sources=None):
             'source': source,
             'label': DataSource(source).label.split(' (')[0],
             'status': status,
-            'last_at': latest.ingested_at if latest else None,
+            'last_at': terakhir,
             'hours': hours,
             'description': _describe(hours),
             'matches': MatchIngest.objects.filter(source=source).count(),

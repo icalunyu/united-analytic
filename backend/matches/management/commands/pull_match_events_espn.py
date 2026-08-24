@@ -16,6 +16,7 @@ from matches.models import (
     MatchPlay,
     MatchTeamStatistics,
     PlayerMatchStatistics,
+    SourceHeartbeat,
 )
 from matches.services import EspnClient, EspnError
 from players.dedup import resolve_player, resolve_team
@@ -199,6 +200,21 @@ class Command(BaseCommand):
                     defaults={'rows': events_total + plays_total + players_total},
                 )
                 processed += 1
+
+        # Denyut nadi: kita berhasil bicara sama ESPN, apa pun hasilnya.
+        #
+        # Tanpa ini kartu Kesehatan Sumber bilang ESPN "berhenti" tiap kali
+        # nggak ada laga baru — dan sesudah penyaring inkremental dipasang,
+        # itu kejadian SETIAP HARI di luar matchday. Alarm palsu buat feed
+        # yang justru paling sering jalan.
+        if fixtures_total:
+            SourceHeartbeat.objects.update_or_create(
+                source=DataSource.ESPN,
+                defaults={
+                    'note': f'{fixtures_total} fixture dicek, {processed} diproses, '
+                            f'{already} dilewati'
+                },
+            )
 
         if already:
             self.stdout.write(

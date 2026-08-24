@@ -1511,3 +1511,58 @@ class PrediksiSesudahPeluitDitolakTests(TestCase):
         terbaru = self._snapshot(2)
         self._snapshot(-1)  # pasca-peluit, harus diabaikan
         self.assertEqual(self.match.prediction_before_kickoff(), terbaru)
+
+
+class HeartbeatSumberTests(TestCase):
+    """Feed sehat yang nggak punya data baru bukan feed mati.
+
+    Regresi: sesudah penyaring inkremental dipasang, ESPN melewati semua laga
+    selesai — jadi MatchIngest nggak tersentuh dan kartu Kesehatan Sumber
+    bilang "berhenti 12 jam lalu" padahal command-nya sukses tiap 10 menit.
+    Alarm palsu buat feed yang paling sering jalan, dan ini pengulangan bug 4.7
+    dengan sebab yang beda.
+    """
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from matches.models import MatchIngest, SourceHeartbeat
+
+        mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.match = Match.objects.create(
+            home_team=mu, away_team=Team.objects.create(name='Ipswich'),
+            kickoff_at=timezone.now(),
+        )
+        # Penarikan terakhir 5 hari lalu — di atas ambang 'berhenti' ESPN (12 jam).
+        ingest = MatchIngest.objects.create(
+            match=self.match, source=DataSource.ESPN, rows=10
+        )
+        MatchIngest.objects.filter(pk=ingest.pk).update(
+            ingested_at=timezone.now() - timedelta(days=5)
+        )
+        self.SourceHeartbeat = SourceHeartbeat
+
+    def _status(self):
+        from matches.source_health import source_health
+
+        return {r['source']: r['status'] for r in source_health()}[DataSource.ESPN]
+
+    def test_tanpa_heartbeat_terbaca_berhenti(self):
+        self.assertEqual(self._status(), 'berhenti')
+
+    def test_heartbeat_baru_bikin_normal_lagi(self):
+        self.SourceHeartbeat.objects.create(
+            source=DataSource.ESPN, note='8 fixture dicek, 0 diproses, 8 dilewati'
+        )
+        self.assertEqual(self._status(), 'normal')
+
+    def test_heartbeat_lama_nggak_menutupi_feed_yang_beneran_mati(self):
+        """Heartbeat cuma menang kalau lebih baru. Kalau command-nya sendiri
+        berhenti jalan, kartunya harus tetap merah."""
+        from datetime import timedelta
+
+        beat = self.SourceHeartbeat.objects.create(source=DataSource.ESPN)
+        self.SourceHeartbeat.objects.filter(pk=beat.pk).update(
+            last_ok_at=timezone.now() - timedelta(days=3)
+        )
+        self.assertEqual(self._status(), 'berhenti')

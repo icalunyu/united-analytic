@@ -501,6 +501,34 @@ class MatchIngest(models.Model):
         return f'{self.match} <- {self.source} ({self.ingested_at:%Y-%m-%d %H:%M})'
 
 
+class SourceHeartbeat(models.Model):
+    """Kapan terakhir kita berhasil BICARA dengan sebuah sumber.
+
+    Beda dari `MatchIngest`, dan bedanya penting. `MatchIngest` menjawab
+    "kapan laga ini terakhir ditarik" — kalau nggak ada laga baru, dia nggak
+    tersentuh sama sekali.
+
+    Sesudah penyaring inkremental dipasang, ESPN melewati semua laga yang udah
+    selesai. Hasilnya kartu Kesehatan Sumber bilang ESPN "berhenti 12 jam lalu"
+    padahal dia sukses jalan tiap 10 menit — alarm palsu buat feed yang justru
+    paling sehat. Ini pengulangan persis bug 4.7, cuma sebabnya beda.
+
+    Yang dicatat di sini: "jaringannya nyambung, API-nya jawab, command-nya
+    kelar tanpa error". Nggak ada data baru itu jawaban yang SAH, bukan
+    kegagalan.
+    """
+
+    source = models.CharField(max_length=30, choices=DataSource.choices, unique=True)
+    last_ok_at = models.DateTimeField(auto_now=True)
+    note = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ['source']
+
+    def __str__(self):
+        return f'{self.source} ok {self.last_ok_at:%Y-%m-%d %H:%M}'
+
+
 class MatchMomentum(models.Model):
     """Kurva momentum per menit dari provider.
 
