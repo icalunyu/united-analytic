@@ -32,7 +32,28 @@
           <span>🩹</span> Cedera
         </a>
       </nav>
-      <div class="mt-auto px-2 text-xs text-gray-600">© 2026 IndoManUtd Jogja</div>
+      <div class="mt-auto flex flex-col gap-2 px-2">
+        {# Kesehatan Sumber — prinsip desain no. 2: kalau nggak jelas asal
+           datanya, jangan ditampilkan. Panel ini yang bikin "berhenti"
+           kelihatan sebelum angkanya terlanjur dikutip pas siaran. #}
+        <div class="rounded-lg border border-[var(--color-border)] p-2">
+          <div class="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-wide text-gray-600">
+            <span>Kesehatan Sumber</span>
+            {% if ada_sumber_bermasalah %}<span class="text-[var(--color-warn,#E4B84A)]">!</span>{% endif %}
+          </div>
+          {% for s in kesehatan_sumber %}
+          <div class="flex items-center gap-1.5 py-0.5 text-[11px]" title="{{ s.description }}">
+            <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full {% if s.status == 'normal' %}bg-emerald-500{% elif s.status == 'lambat' %}bg-amber-400{% else %}bg-red-500{% endif %}"></span>
+            <span class="flex-1 truncate text-gray-400">{{ s.label }}</span>
+            <span class="shrink-0 text-gray-600">{{ s.description }}</span>
+          </div>
+          {% endfor %}
+          <div class="mt-1.5 border-t border-[var(--color-border)] pt-1.5 text-[10px] leading-snug text-gray-600">
+            Merah = feed berhenti, angkanya jangan dipakai sebelum dicek manual.
+          </div>
+        </div>
+        <div class="text-xs text-gray-600">© 2026 IndoManUtd Jogja</div>
+      </div>
     </aside>
 
     <div class="flex flex-1 flex-col">

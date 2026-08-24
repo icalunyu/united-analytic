@@ -38,6 +38,36 @@
   </div>
 </div>
 
+{% if konflik %}
+<div class="card mb-4 border-[rgba(228,184,74,.3)] p-4">
+  <div class="mb-2 flex items-center justify-between">
+    <h2 class="text-sm font-semibold text-[var(--color-text-strong)]">
+      Konflik Sumber <span class="font-normal text-gray-500">· {{ konflik_total }} angka berbeda antar provider</span>
+    </h2>
+    <span class="text-[10px] uppercase tracking-wide text-gray-600">8 terbaru</span>
+  </div>
+  <p class="mb-3 text-xs leading-relaxed text-gray-500">
+    Dua provider mengirim angka berbeda buat hal yang sama. App <b>menandai</b>,
+    keputusan tetap di analis — yang dipakai di tabel bawah adalah nilai dari
+    sumber berprioritas lebih tinggi.
+  </p>
+  <div class="flex flex-col gap-1.5">
+    {% for k in konflik %}
+    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
+      <span class="font-medium text-[var(--color-text-strong)]">{{ k.player.name }}</span>
+      <span class="font-mono text-gray-500">{{ k.field }}</span>
+      <span class="text-emerald-400">{{ k.kept_value }}</span>
+      <span class="text-gray-600">({{ k.kept_source }})</span>
+      <span class="text-gray-700">vs</span>
+      <span class="text-amber-400">{{ k.other_value }}</span>
+      <span class="text-gray-600">({{ k.other_source }})</span>
+      <span class="text-gray-700">· {{ k.match.kickoff_at|date:"d M" }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if baris %}
 <div class="card overflow-x-auto p-0">
   <table class="w-full text-sm">
@@ -56,7 +86,10 @@
     <tbody>
       {% for b in baris %}
       <tr class="border-b border-[var(--color-border)]/50 hover:bg-white/5">
-        <td class="px-3 py-2 font-medium text-[var(--color-text-strong)]">{{ b.nama }}</td>
+        <td class="px-3 py-2 font-medium text-[var(--color-text-strong)]">
+          {{ b.nama }}
+          {% if b.sumber %}<span class="ml-1.5 rounded border border-[var(--color-border)] px-1 py-0.5 align-middle text-[9px] font-normal text-gray-600" title="Angka di baris ini berasal dari: {{ b.sumber }}">{{ b.sumber }}</span>{% endif %}
+        </td>
         <td class="px-3 py-2 text-gray-500">{{ b.pos }}</td>
         <td class="px-3 py-2 text-right font-mono">{{ b.menit }}</td>
         <td class="px-3 py-2 text-right font-mono">{{ b.gol }}</td>

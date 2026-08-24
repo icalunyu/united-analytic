@@ -348,3 +348,66 @@ class AmbangSampelTests(TestCase):
         )
         nama = [b['nama'] for b in r.context['baris']]
         self.assertEqual(nama[0], 'Reguler', 'yang punya sampel cukup harus di atas')
+
+
+class ProvenanceTampilTests(TestCase):
+    """Tiga hal yang matang tapi nol dipakai UI, akhirnya tersambung.
+
+    Prinsip desain no. 2: *"Setiap angka membawa sumbernya... Kalau tidak jelas
+    asal datanya, jangan ditampilkan."* Datanya 100% terisi di produksi
+    (27.824 baris punya field_sources) tapi sebelum ini nggak pernah terlihat
+    siapa pun.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from matches.models import FieldConflict, MatchIngest, PlayerMatchStatistics
+        from players.models import DataSource, Player
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        cls.m = Match.objects.create(
+            home_team=cls.mu, away_team=Team.objects.create(name='Ipswich'),
+            kickoff_at=timezone.now(), season=2026,
+            league_name='2026-27 English Premier League', status=Match.Status.FINISHED,
+        )
+        cls.p = Player.objects.create(name='Bruno Fernandes', team=cls.mu, position='CM')
+        PlayerMatchStatistics.objects.create(
+            match=cls.m, player=cls.p, team=cls.mu, minutes_played=90, goals=1,
+            field_sources={'goals': DataSource.FOTMOB, 'xg': DataSource.UNDERSTAT},
+        )
+        MatchIngest.objects.create(match=cls.m, source=DataSource.FOTMOB, rows=10)
+        FieldConflict.objects.create(
+            match=cls.m, player=cls.p, team=cls.mu, field='minutes_played',
+            kept_source=DataSource.FOTMOB, kept_value='90',
+            other_source=DataSource.ESPN, other_value='87',
+        )
+
+    def test_chip_sumber_tampil_di_baris(self):
+        r = self.client.get(reverse('dashboard:statistics'), {'musim': 2026})
+        baris = {b['nama']: b for b in r.context['baris']}
+        self.assertIn('FotMob', baris['Bruno Fernandes']['sumber'])
+        self.assertIn('Understat', baris['Bruno Fernandes']['sumber'])
+        self.assertContains(r, 'FotMob + Understat')
+
+    def test_kartu_konflik_tampil(self):
+        r = self.client.get(reverse('dashboard:statistics'), {'musim': 2026})
+        self.assertEqual(len(r.context['konflik']), 1)
+        self.assertContains(r, 'Konflik Sumber')
+        self.assertContains(r, 'minutes_played')
+
+    def test_kesehatan_sumber_ada_di_semua_halaman(self):
+        """Context processor, jadi harus muncul di halaman mana pun."""
+        for nama in ('dashboard:home', 'dashboard:schedule', 'dashboard:statistics',
+                     'dashboard:squad', 'dashboard:injuries'):
+            r = self.client.get(reverse(nama))
+            self.assertIn('kesehatan_sumber', r.context, nama)
+            self.assertContains(r, 'Kesehatan Sumber', msg_prefix=nama)
+
+    def test_status_feed_dihitung_dari_MatchIngest(self):
+        r = self.client.get(reverse('dashboard:home'))
+        rows = {s['source']: s for s in r.context['kesehatan_sumber']}
+        from players.models import DataSource
+
+        self.assertEqual(rows[DataSource.FOTMOB]['status'], 'normal')
+        # Yang belum pernah menarik harus 'berhenti', bukan diam-diam normal.
+        self.assertEqual(rows[DataSource.UNDERSTAT]['status'], 'berhenti')

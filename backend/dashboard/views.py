@@ -4,7 +4,8 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 
 from matches import competitions
-from matches.models import Match, MatchEvent, PlayerMatchStatistics
+from players.provenance import describe_sources
+from matches.models import FieldConflict, Match, MatchEvent, PlayerMatchStatistics
 from matches.momentum import build_momentum
 from players.models import Injury, Player
 
@@ -480,8 +481,13 @@ def _agregat_pemain(rows):
                 'umpan_akurat': 0, 'umpan_total': 0,
                 'saves': 0, 'kebobolan': 0, 'ada_kiper': False,
                 'laga': 0,
+                # Gabungan field_sources dari semua laga pemain ini. Dipakai
+                # buat chip 'sumber: A+C' — prinsip desain no. 2, tiap angka
+                # membawa sumbernya.
+                'sumber': {},
             },
         )
+        d['sumber'].update(r.field_sources or {})
         menit = r.minutes_played or 0
         d['menit'] += menit
         d['laga'] += 1
@@ -507,6 +513,21 @@ def _agregat_pemain(rows):
             d['kebobolan'] += r.goals_conceded or 0
             d['ada_kiper'] = True
     return per_pemain
+
+
+# Field mana yang menyusun tiap kolom — dipakai `describe_sources` buat
+# bilang angka ini datang dari mana.
+SUMBER_KOLOM = {
+    'menit': ['minutes_played'],
+    'gol': ['goals'],
+    'assist': ['assists'],
+    'xg': ['xg'],
+    'xa': ['xa'],
+    'final3': ['passes_into_final_third'],
+    'umpan': ['passes_accurate', 'passes_total'],
+    'intersep': ['interceptions'],
+    'sv': ['saves', 'goals_conceded'],
+}
 
 
 def _per90(total, menit):
@@ -570,6 +591,9 @@ def statistics(request):
                 if d['ada_kiper'] and (d['saves'] + d['kebobolan']) >= SAVE_MINIMUM
                 else None
             ),
+            'sumber': describe_sources(
+                d['sumber'], [f for fs in SUMBER_KOLOM.values() for f in fs]
+            ),
         })
 
     # "Baris tanpa data SELALU di bawah, di kedua arah" — handoff. Ini nggak
@@ -587,11 +611,30 @@ def statistics(request):
     kosong.sort(key=lambda b: b['nama'].lower())
     baris = berisi + kosong
 
+    # Konflik Sumber. Desain menaruh panel ini di halaman Skuad, TAPI yang
+    # dimaksud di sana adalah konflik STATUS KETERSEDIAAN antar feed cedera —
+    # dan itu masih terblokir karena cuma ada satu feed cedera.
+    #
+    # Yang kita PUNYA adalah konflik ANGKA STATISTIK antar provider, dan
+    # tempatnya yang jujur ya di sini, di halaman yang menampilkan angka itu.
+    # Menaruhnya di Skuad bakal bikin orang mengira itu konflik ketersediaan.
+    konflik = list(
+        FieldConflict.objects.filter(
+            player__team__is_manchester_united=True, match__season=musim_aktif
+        )
+        .select_related('player', 'match__home_team', 'match__away_team')
+        .order_by('-detected_at')[:8]
+    )
+
     return render(
         request,
         'dashboard/statistics.html',
         {
             'active_nav': 'statistics',
+            'konflik': konflik,
+            'konflik_total': FieldConflict.objects.filter(
+                player__team__is_manchester_united=True, match__season=musim_aktif
+            ).count(),
             'kolom': KOLOM_STATISTIK,
             'baris': baris,
             'musim_tersedia': musim_tersedia,
