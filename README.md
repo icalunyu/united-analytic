@@ -2,6 +2,9 @@
 
 Web app internal buat divisi analisis IndoManUtd Jogja. Detail konteks & scope lengkap ada di [projectbrief.md](projectbrief.md).
 
+Status implementasi per komponen ada di [CHECKLIST.md](CHECKLIST.md) — apa yang
+selesai, apa yang separuh, apa yang terblokir dan kenapa.
+
 Riwayat perubahan besar di lapisan data — beserta keputusan, jebakan, dan
 batas yang sudah teruji — ada di [CATATAN-PERUBAHAN-BESAR.md](CATATAN-PERUBAHAN-BESAR.md).
 Baca itu dulu sebelum menyentuh sistem dedup, provenance, atau ingestion.

@@ -576,6 +576,10 @@ tangan tidak.
 
 ## 14. Status per tahap design handoff
 
+> **Basi — jangan dipakai.** Status terkini ada di [CHECKLIST.md](CHECKLIST.md),
+> diaudit 24 Agustus 2026 per komponen terhadap kode yang benar-benar ada.
+> Tabel di bawah ditinggalkan sebagai catatan sejarah keadaan 18 Agustus.
+
 | Tahap | Status |
 |---|---|
 | 0 — Fondasi data | **7/7 selesai** |
