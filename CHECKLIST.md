@@ -15,16 +15,16 @@ Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **�
 
 | Tahap | ✅ | 🟡 | ⬜ | 🚫 | Keadaan |
 |---|--:|--:|--:|--:|---|
-| 0 — Fondasi data | 6 | 7 | 5 | 0 | Tulang punggung berdiri; separuh entitas belum ada |
+| 0 — Fondasi data | 8 | 7 | 3 | 0 | **NewsItem & PlayerAvailability** akhirnya ada |
 | 1 — Penarikan & rekonsiliasi | 7 | 4 | 1 | 1 | **Chip sumber & Kesehatan Sumber akhirnya tampil** |
-| 2 — Halaman rujukan | 8 | 6 | 6 | 3 | **Statistik selesai**; Skuad separuh; Berita nol |
+| 2 — Halaman rujukan | 12 | 7 | 2 | 2 | Statistik & **Berita** jadi; Skuad separuh |
 | 3 — Metrik turunan | 1 | 1 | 4 | 1 | **LV-08 beban 14 hari jadi**, dirujuk 3 kartu |
 | 4 — Pasca laga | 0 | 0 | 7 | 0 | **Nol baris kode** |
 | 5 — Pra laga | 5 | 1 | 5 | 0 | **Halaman Pra-laga hidup** — PR-01/02/03/04/05 |
 | 6 — Live | 0 | 3 | 9 | 0 | Belum dimulai |
 | Lintas halaman | 3 | 4 | 4 | 0 | Chip sumber, Kesehatan Sumber, Konflik tampil |
 
-**220 test lulus.** Tujuh halaman hidup: `/`, `/jadwal/`, `/pra/`, `/skuad/`, `/statistik/`, `/cedera/`, `/match/<id>/`.
+**240 test lulus.** Delapan halaman hidup: `/`, `/jadwal/`, `/pra/`, `/skuad/`, `/statistik/`, `/berita/`, `/cedera/`, `/match/<id>/`.
 
 ---
 
@@ -47,7 +47,8 @@ Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **�
 | 🟡 | Syarat selesai B: tidak ada nama ganda | **60 kunci nama aktif masih muncul >1×** (mayoritas orang berbeda) |
 | ⬜ | `PlayerSeasonStats` (per kompetisi per musim) | Diagregasi on-the-fly; tanpa ini tidak ada dasar pembanding se-liga |
 | ⬜ | `TransferRumour` | App `transfers/` masih stub Django |
-| ⬜ | `NewsItem` | Nol rujukan di seluruh backend |
+| ✅ | `NewsItem` | App `news/`, 8 feed, 86 berita tersimpan |
+| ✅ | `PlayerAvailability` | Status per-sumber — fondasi panel Konflik Sumber |
 | ⬜ | `SavedMoment` | Nol rujukan |
 | ⬜ | Model `Competition` | `matches/competitions.py` sengaja fungsi murni, bukan model |
 
@@ -92,13 +93,18 @@ terpenuhi & dibuktikan test** ✅
 | ⬜ | Rangka tabel 6 kolom sesuai desain | |
 | ⬜ | Kolom Beban 14 hr + pewarnaan risiko | Datanya bisa dihitung, rumusnya (LV-08) belum ada |
 | ⬜ | Header: waktu pembaruan + jumlah sumber | |
-| 🚫 | **Panel Konflik Sumber (SQ-01)** | Terblokir sumber cedera kedua |
-| 🚫 | Urutan prioritas sumber ketersediaan | Sama |
+| 🟡 | **Panel Konflik Sumber (SQ-01)** | **Tidak terblokir lagi** — FPL jadi sumber kedua, konfliknya nyata (Amad: FotMob bugar vs FPL 75%). Tinggal panelnya dibangun |
+| 🟡 | Urutan prioritas sumber ketersediaan | Datanya sudah dua sumber; aturannya belum ditulis |
 
-### Berita — ⬜ nol
-Tidak ada model, route, maupun sumber. **Butuh keputusan produk dulu:
-beritanya dari mana?** Tingkat A/B/C juga terblokir — ia butuh riwayat klaim
-yang akhirnya terbukti, dan riwayat itu baru ada setelah feed berjalan lama.
+### Berita — ✅ hidup
+| | Butir | Catatan |
+|---|---|---|
+| ✅ | Halaman + route `/berita/` | 8 feed, semuanya diuji hidup |
+| ✅ | Umpan Berita bertingkat A/B/C | Aturan redaksi ditulis di UI, bukan cuma dokumen |
+| ✅ | Kesehatan Sumber | Lewat context processor |
+| 🟡 | "N sumber sepakat" | Dihitung per **grup kepemilikan** (Reach plc = 1), dan menandai kalau semua mengutip orang yang sama. Tapi pengelompokan topiknya masih kasar — nama depan kadang terpisah jadi topik sendiri ("Alejandro", "Lewis") |
+| ⬜ | Sentimen Fans | Desain bilang **diisi manual**; app sengaja tidak mengarang angka dari judul |
+| 🚫 | The Athletic & BBC | Larangan tertulis, bukan hambatan teknis. Ornstein jadi **tidak punya jalur sah** |
 
 ## Tahap 3 — Metrik turunan
 
@@ -156,37 +162,21 @@ tanpa UI. Handoff tegas: **bangun mode putar ulang dulu, jangan mode langsung**.
 
 ## Yang direkomendasikan berikutnya
 
-**1. Pipeline Berita.** Sumbernya sudah diriset dan diuji hidup (24 Agu):
-Sky Sports feed khusus MU (`rss/11667`), Guardian Open Platform (gratis
-non-komersial, 500/hari), Manchester Evening News, plus kanal YouTube resmi
-klub dan Fabrizio Romano.
+**1. Panel Konflik Sumber di Skuad (SQ-01).** Sekarang benar-benar bisa —
+`PlayerAvailability` sudah berisi dua sumber, dan konfliknya nyata:
+Amad Diallo dianggap bugar oleh FotMob tapi *"75% chance of playing"* oleh
+FPL. Tinggal dua kotak berdampingan dengan umur data masing-masing.
 
-**Dua sumber harus dicoret, dan bukan karena teknis.** The Athletic melarang
-eksplisit *"creating archived or cached data sets"* — itu persis
-menggambarkan tabel berita kita, dan konsekuensinya **tidak ada jalur sah
-untuk Ornstein** karena ia hanya menulis di sana. BBC melarang *"plucking
-metadata from our RSS feeds"*. Keduanya larangan tertulis.
-
-Tiga jebakan yang sudah teridentifikasi sebelum satu baris kode ditulis:
-- **Kepemilikan bersama.** MEN, Mirror, Express, Daily Star semuanya Reach plc.
-  Menghitungnya sebagai sumber terpisah bikin "6 sumber sepakat" bohong —
-  hitung per **grup penerbit**.
-- **Satu sumber asli, enam penyalin.** Mayoritas berita transfer mengutip
-  Romano. Simpan `sumber_asal_dikutip`, bukan cuma jumlah.
-- **Feed WordPress mengirim artikel UTUH** di `content:encoded`. Parser wajib
-  membuangnya sebelum menyentuh DB, atau kita menyalin artikel tanpa sadar.
-
-**2. Sumber cedera kedua: Fantasy Premier League API.** Gratis, tanpa key,
-satu panggilan/hari, dan memberi ketiga hal yang desain minta: status, teks
-kembali, umur data. Konfliknya sudah nyata — Amad Diallo dianggap bugar oleh
-FotMob tapi *"75% chance of playing"* oleh FPL. Ini yang membuka panel
-Konflik Sumber di Skuad.
-
-Sekaligus menjawab misteri lama: **263 dari 264 entri RETURNED bukan bug
-kita.** Highlightly ternyata feed **riwayat karier**, bukan ketersediaan —
-entri terbaru Mason Mount berakhir September 2021. Turunkan perannya jadi
-sumber riwayat saja.
+**2. Tabel Ketersediaan (SQ-02).** Pill Bugar/Diragukan/Absen/Dipinjamkan
+datanya sudah ada, dan kolom Beban 14 hr sudah jadi. Ini melengkapi halaman
+Skuad versi desain.
 
 **3. Tahap 4 — Pasca laga.** Nol dari tujuh, dan datanya sudah diam (laga
 selesai), jadi paling mudah diuji. Handoff menaruhnya sebelum Live justru
 karena itu.
+
+**Utang yang lahir hari ini:**
+- Pengelompokan topik di panel Kesepakatan masih kasar — nama depan terpisah
+  jadi topik sendiri. Perlu penggabungan nama depan+belakang.
+- `Injury` (Highlightly) sekarang cuma berguna sebagai **riwayat**, bukan
+  status. Perannya di halaman Cedera perlu diperjelas.
