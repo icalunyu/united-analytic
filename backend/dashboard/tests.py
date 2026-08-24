@@ -182,9 +182,11 @@ class StatistikTests(TestCase):
             match=cls.musim_lalu, player=cls.p1, team=cls.mu, minutes_played=90, goals=9,
         )
         # Lammens: kiper.
+        # 6 penyelamatan + 2 kebobolan = 8 tembakan, di atas SAVE_MINIMUM.
+        # Halaman ini mengagregasi per MUSIM, jadi ambang 5 itu bar yang rendah.
         PlayerMatchStatistics.objects.create(
             match=cls.liga1, player=cls.p2, team=cls.mu, minutes_played=90,
-            saves=3, goals_conceded=1,
+            saves=6, goals_conceded=2,
         )
 
     def _baris(self, **params):
@@ -228,7 +230,7 @@ class StatistikTests(TestCase):
 
     def test_sv_persen_cuma_buat_kiper(self):
         baris, _ = self._baris(musim=2026)
-        self.assertEqual(baris['Senne Lammens']['sv'], 75.0)
+        self.assertEqual(baris['Senne Lammens']['sv'], 75.0)  # 6/(6+2)
         self.assertIsNone(baris['Bruno Fernandes']['sv'])
 
     def test_baris_tanpa_data_selalu_di_bawah_di_KEDUA_arah(self):
@@ -290,3 +292,59 @@ class SvPersenHanyaKiperTests(TestCase):
         baris = {b['nama']: b for b in r.context['baris']}
         self.assertIsNone(baris['Harry Maguire']['sv'], 'bek nggak boleh punya Sv%')
         self.assertEqual(baris['Senne Lammens']['sv'], 60.0)
+
+
+class AmbangSampelTests(TestCase):
+    """Persentase dari sampel kecil nggak boleh mendominasi sortir.
+
+    Regresi: waktu halaman ini pertama tayang, Bendito Mantato dengan 14 menit
+    nangkring di puncak Umpan% dengan 100% — 1 umpan dari 1. Angkanya benar,
+    tapi tabel yang menempatkannya di atas Mainoo (1.623 menit) menyesatkan,
+    dan halaman ini dipakai mengutip angka saat siaran.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from matches.models import PlayerMatchStatistics
+        from players.models import Player
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        m = Match.objects.create(
+            home_team=cls.mu, away_team=Team.objects.create(name='Ipswich'),
+            kickoff_at=timezone.now(), season=2026,
+            league_name='2026-27 English Premier League', status=Match.Status.FINISHED,
+        )
+        # Cameo: 1 umpan dari 1 = 100%.
+        PlayerMatchStatistics.objects.create(
+            match=m, team=cls.mu, minutes_played=14, passes_accurate=1, passes_total=1,
+            player=Player.objects.create(name='Cameo', team=cls.mu, position='CM'),
+        )
+        # Reguler: 450 dari 500 = 90%.
+        PlayerMatchStatistics.objects.create(
+            match=m, team=cls.mu, minutes_played=900, passes_accurate=450, passes_total=500,
+            player=Player.objects.create(name='Reguler', team=cls.mu, position='CM'),
+        )
+        # Kiper cameo: 1 penyelamatan, 0 kebobolan = 100%.
+        PlayerMatchStatistics.objects.create(
+            match=m, team=cls.mu, minutes_played=5, saves=1, goals_conceded=0,
+            player=Player.objects.create(name='GK Cameo', team=cls.mu, position='GK'),
+        )
+
+    def _baris(self):
+        r = self.client.get(reverse('dashboard:statistics'), {'musim': 2026})
+        return {b['nama']: b for b in r.context['baris']}
+
+    def test_umpan_persen_sampel_kecil_dikosongkan(self):
+        baris = self._baris()
+        self.assertIsNone(baris['Cameo']['umpan'], '1 umpan dari 1 bukan 100% yang berarti')
+        self.assertEqual(baris['Reguler']['umpan'], 90.0)
+
+    def test_sv_persen_sampel_kecil_dikosongkan(self):
+        self.assertIsNone(self._baris()['GK Cameo']['sv'])
+
+    def test_yang_dikosongkan_tetap_di_bawah_saat_sortir(self):
+        r = self.client.get(
+            reverse('dashboard:statistics'), {'musim': 2026, 'urut': 'umpan'}
+        )
+        nama = [b['nama'] for b in r.context['baris']]
+        self.assertEqual(nama[0], 'Reguler', 'yang punya sampel cukup harus di atas')

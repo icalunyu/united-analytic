@@ -441,6 +441,17 @@ MUSIM_STATISTIK = 2
 # menclok di puncak tabel.
 MENIT_MINIMUM_PER90 = 90
 
+# Ambang sampel buat kolom PERSENTASE. Masalahnya sama tapi obatnya beda:
+# persentase nggak dibagi menit, jadi ambang menit nggak nolong. Yang bikin
+# 100% nggak berarti apa-apa itu penyebutnya — 1 umpan dari 1.
+#
+# Kejadian nyata waktu halaman ini pertama tayang: Bendito Mantato, 14 menit,
+# nangkring di puncak Umpan% dengan 100%. Angkanya benar, tapi tabel yang
+# menempatkan pemain 14 menit di atas Mainoo 1.623 menit itu menyesatkan —
+# dan halaman ini dipakai buat ngutip angka pas siaran.
+UMPAN_MINIMUM = 50   # umpan dicoba
+SAVE_MINIMUM = 5     # tembakan yang beneran mengarah ke gawang
+
 
 def _agregat_pemain(rows):
     """Ringkas baris per-laga jadi satu baris per pemain.
@@ -551,12 +562,13 @@ def statistics(request):
             'final3': _per90(d['final3'], d['final3_menit']),
             'umpan': (
                 round(d['umpan_akurat'] / d['umpan_total'] * 100, 1)
-                if d['umpan_total'] else None
+                if d['umpan_total'] >= UMPAN_MINIMUM else None
             ),
             'intersep': _per90(d['intersep'], d['intersep_menit']),
             'sv': (
                 round(d['saves'] / (d['saves'] + d['kebobolan']) * 100, 1)
-                if d['ada_kiper'] and (d['saves'] + d['kebobolan']) else None
+                if d['ada_kiper'] and (d['saves'] + d['kebobolan']) >= SAVE_MINIMUM
+                else None
             ),
         })
 
@@ -593,5 +605,7 @@ def statistics(request):
             'urut': urut,
             'naik': naik,
             'menit_minimum': MENIT_MINIMUM_PER90,
+            'umpan_minimum': UMPAN_MINIMUM,
+            'save_minimum': SAVE_MINIMUM,
         },
     )
