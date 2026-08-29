@@ -185,12 +185,19 @@ menit per posisi, usia, dan output per 90.
 **3. Tahap 6 — Live, mode putar ulang dulu.** Handoff tegas soal urutannya.
 `RawPayload` sudah ada sebagai bahan tapi **belum ada satu pun pembacanya**.
 
-**Utang yang lahir hari ini:**
-- Bobot nilai pemain belum dikalibrasi — handoff tidak memberi angka, cuma
-  daftar aksi. Perbandingan antar posisi dijaga, besarannya belum.
+**Utang yang masih berdiri:**
 - Aturan 4 SQ-01 (susunan resmi menimpa semuanya) bertes tapi jarang menyala:
   penarik kita baru mendapat susunan pada atau sesudah kick-off.
-- `derive_availability_news` belum masuk crontab produksi.
-- Baris pemain ganda masih terlihat di halaman Pasca (mis. 'Amad Diallo' dan
-  'Amad Diallo Traore' di laga yang sama) — utang lama dari `merge_duplicates`,
-  bukan lahir hari ini, tapi sekarang jadi kelihatan.
+- 'Tyrell Malacia' punya dua record dan `merge_duplicates` sengaja melewatinya
+  — salah satunya bertim "No Club" sehingga aturan pengaman "main di tanggal
+  sama untuk klub berbeda" kena palsu. Butuh mata manusia.
+- Sebagian besar pemain lawan `position`-nya kosong. Mereka dinilai pakai
+  bobot TENGAH, dan itu membatasi seberapa jauh `calibrate_ratings` bisa
+  dipercaya (134 dari 377 baris yang bisa dipakai).
+
+**Sudah lunas hari ini:**
+- Bobot nilai pemain **sudah diukur** terhadap rating FotMob (r = 0,850,
+  sebaran 0,76 vs 0,74) dan sengaja tidak diubah — uji silangnya menolak.
+  `python manage.py calibrate_ratings --cari` mengulang pemeriksaannya.
+- `matches/scoreline.py` dipakai `match_result` dan Dashboard, bukan cuma Pasca.
+- Baris pemain ganda: `merge_duplicates` sudah menangkapnya.

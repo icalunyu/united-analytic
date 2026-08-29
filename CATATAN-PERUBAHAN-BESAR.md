@@ -1443,3 +1443,77 @@ yang menjaga urutan itu.
 - `matches/scoreline.py` jadi helper terpusat "United selalu ditulis lebih
   dulu", tapi baru dipakai halaman Pasca. Halaman lain masih punya logikanya
   sendiri.
+
+## 25. Bobot nilai pemain diuji, lalu sengaja tidak diubah
+
+Utang yang ditulis kemarin ("bobot belum dikalibrasi") ternyata bukan utang.
+Sesudah diukur, jawabannya: **biarkan**.
+
+`PlayerMatchStatistics.rating` berisi rating FotMob — penilai profesional yang
+independen. Itu tolok ukur yang layak untuk satu pertanyaan sempit: apakah
+SKALA kita masuk akal? Bukan untuk menyalin angkanya; PS-03 minta nilai yang
+dihitung dari event, dan itu tetap yang dikerjakan `matches/ratings.py`.
+
+Hasilnya di 134 baris berposisi diketahui (8 laga):
+
+| | kita | FotMob |
+|---|--:|--:|
+| rata-rata | 6,71 | 6,81 |
+| simpangan baku | 0,76 | 0,74 |
+| terendah | 5,69 | 5,13 |
+| tertinggi | 10,17 | 8,88 |
+
+Korelasi Pearson **r = 0,850**, RMSE 0,423, satu dari 134 kepotong
+langit-langit.
+
+Rata-rata dan sebarannya nyaris berimpit tanpa disetel sama sekali.
+
+### Kenapa tidak jadi disetel
+
+Dua faktor dicoba: `k_neg` (mengalikan seluruh bobot negatif, karena ujung
+bawah kita terlihat terlalu murah hati) dan `k_gk` (mengalikan bobot kiper).
+Di seluruh data, faktor terbaik menurunkan RMSE 0,423 → 0,397.
+
+Kelihatan seperti perbaikan. Uji silang dua lipatan **dibelah per laga**
+bilang lain:
+
+```
+lipatan 0: latih k_neg=0,7 k_gk=2,3 → uji rmse 0,293 jadi 0,297 (MEMBURUK)
+lipatan 1: latih k_neg=0,8 k_gk=1,3 → uji rmse 0,529 jadi 0,503 (membaik)
+```
+
+Dua lipatan tidak sepakat soal `k_gk` — 2,3 lawan 1,3. Faktor yang berayun
+sejauh itu antar belahan bukan sedang menemukan pola, dia sedang mengejar
+derau. Dan di lipatan 0 hasilnya justru lebih buruk di data yang tidak
+dilatih. Jadi bobotnya dipertahankan apa adanya.
+
+**Belahannya per laga, bukan per baris.** Pemain di laga yang sama berbagi
+lawan, skor, dan wasit. Membelah per baris bikin rekan setim si pemain uji
+ikut masuk data latih, dan angka "perbaikan"-nya jadi terlalu bagus.
+
+### Satu jebakan yang hampir bikin kesimpulannya salah
+
+Pengukuran pertama memakai 377 baris dan menghasilkan vonis yang meyakinkan:
+"kiper nyaris tidak bergerak, sd 0,28 lawan 0,60". Ternyata **243 dari 377
+baris itu tidak punya `position`** — mayoritas pemain lawan yang posisinya
+belum pernah kita tarik — dan semuanya jatuh ke bobot TENGAH lewat default
+`ratings.kelompok()`.
+
+Artinya angka "per kelompok posisi" tadi membandingkan bek dan kiper yang
+dinilai pakai bobot gelandang, lalu menyalahkan bobot per posisi. Sesudah
+dibatasi ke posisi yang diketahui, n kiper tinggal 12 — terlalu sedikit untuk
+menyimpulkan apa pun. Command-nya sekarang default ke posisi diketahui dan
+menuliskan peringatan kalau `--semua-posisi` dipakai.
+
+### Sisanya
+
+- `matches/scoreline.py` sekarang dipakai `match_result` dan halaman Dashboard,
+  bukan cuma Pasca. Tidak ada lagi `mu_is_home` yang ditulis ulang di view.
+- Utang "baris pemain ganda" ternyata bukan bug: `merge_duplicates` **sudah**
+  menangkap 'Amad Diallo Traore' → 'Amad Diallo' (32 laga bertumpuk).
+  Command-nya cuma belum pernah dijalankan. Catatan: flag-nya `--apply`,
+  bukan `--dry-run` — default-nya sudah dry-run.
+- 'Tyrell Malacia' sengaja dilewati aturan pengaman ("main di tanggal yang
+  sama untuk klub berbeda"). Salah satu record-nya bertim "No Club", jadi
+  aturannya kena palsu. Butuh mata manusia, bukan pelonggaran aturan — aturan
+  itu yang dulu mencegah record asli kehapus.

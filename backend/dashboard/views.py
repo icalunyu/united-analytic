@@ -57,19 +57,13 @@ def mu_matches():
 
 
 def match_result(match):
-    """Return 'W'/'D'/'L' dari sudut pandang MU, atau None kalau belum final."""
-    if match.home_score is None or match.away_score is None:
-        return None
+    """Return 'W'/'D'/'L' dari sudut pandang MU, atau None kalau belum final.
 
-    mu_is_home = match.home_team.is_manchester_united
-    mu_score = match.home_score if mu_is_home else match.away_score
-    opp_score = match.away_score if mu_is_home else match.home_score
-
-    if mu_score > opp_score:
-        return 'W'
-    if mu_score < opp_score:
-        return 'L'
-    return 'D'
+    Cuma penerusan ke `matches/scoreline.py`. Aturan "United selalu ditulis
+    lebih dulu" ditulis sekali di sana supaya tiap halaman tidak menurunkan
+    versinya sendiri — itu cara "2-1" berubah arti diam-diam antar kartu.
+    """
+    return scoreline.hasil(match)
 
 
 def annotate_result(match):
@@ -170,9 +164,9 @@ def home(request):
     goals_for = 0
     goals_against = 0
     for m in finished:
-        mu_is_home = m.home_team.is_manchester_united
-        goals_for += (m.home_score if mu_is_home else m.away_score) or 0
-        goals_against += (m.away_score if mu_is_home else m.home_score) or 0
+        mu, lawan = scoreline.skor(m)
+        goals_for += mu or 0
+        goals_against += lawan or 0
 
     featured = (
         mu_matches().filter(status__in=LIVE_STATUSES).order_by('kickoff_at').first()
@@ -194,11 +188,11 @@ def home(request):
     chart_goals_for = []
     chart_goals_against = []
     for m in chronological:
-        mu_is_home = m.home_team.is_manchester_united
-        opponent = m.away_team if mu_is_home else m.home_team
+        _, opponent, _ = scoreline.sudut_pandang(m)
+        mu_gol, lawan_gol = scoreline.skor(m)
         chart_labels.append(opponent.short_name or opponent.name)
-        chart_goals_for.append((m.home_score if mu_is_home else m.away_score) or 0)
-        chart_goals_against.append((m.away_score if mu_is_home else m.home_score) or 0)
+        chart_goals_for.append(mu_gol or 0)
+        chart_goals_against.append(lawan_gol or 0)
 
     context = {
         'active_nav': 'dashboard',

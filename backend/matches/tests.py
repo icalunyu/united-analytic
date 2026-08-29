@@ -2409,3 +2409,78 @@ class FormatAngkaIndonesiaTests(SimpleTestCase):
         self.assertTrue(hasil)
         self.assertNotIn('.', hasil[0]['simpangan_teks'])
         self.assertIn(',', hasil[0]['simpangan_teks'])
+
+
+class KalibrasiNilaiTests(TestCase):
+    """Command `calibrate_ratings` — pembanding, bukan pengubah.
+
+    Yang dijaga: dia tidak pernah menulis apa pun, dan vonisnya menolak
+    kalibrasi ulang kalau perbaikannya tidak bertahan di data yang tidak
+    dilatih. Faktor yang cuma bagus di data latih itu derau yang menyamar
+    jadi perbaikan.
+    """
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town')
+
+    def _baris(self, nama, rating, laga, **kolom):
+        from matches.models import PlayerMatchStatistics
+
+        p = Player.objects.create(name=nama, team=self.mu, position=kolom.pop('position', 'CM'))
+        return PlayerMatchStatistics.objects.create(
+            match=laga, player=p, team=self.mu, minutes_played=90, rating=rating, **kolom
+        )
+
+    def _laga(self, i):
+        from datetime import timedelta
+
+        return Match.objects.create(
+            home_team=self.mu, away_team=self.lawan,
+            kickoff_at=timezone.now() - timedelta(days=i),
+            season=2026, status=Match.Status.FINISHED, home_score=1, away_score=0,
+        )
+
+    def test_tanpa_data_rating_berhenti_rapi(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        err = StringIO()
+        call_command('calibrate_ratings', stderr=err)
+        self.assertIn('pull_fotmob', err.getvalue())
+
+    def test_melaporkan_tanpa_mengubah_bobot(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from matches import ratings
+
+        sebelum = {k: dict(v) for k, v in ratings.BOBOT.items()}
+        for i in range(4):
+            laga = self._laga(i)
+            self._baris(f'A{i}', 7.0, laga, goals=1, assists=1, duels_won=4)
+            self._baris(f'B{i}', 6.2, laga, duels_won=2, duels_lost=3, tackles=1)
+
+        out = StringIO()
+        call_command('calibrate_ratings', '--cari', stdout=out)
+        teks = out.getvalue()
+        self.assertIn('rata-rata', teks)
+        self.assertIn('simpangan', teks)
+        # Bobotnya harus persis sama sesudah command jalan.
+        self.assertEqual({k: dict(v) for k, v in ratings.BOBOT.items()}, sebelum)
+
+    def test_pemain_tanpa_posisi_diperingatkan(self):
+        """Mereka jatuh ke bobot TENGAH — membandingkan mereka berarti menilai
+        bek pakai bobot gelandang lalu menyalahkan bobotnya."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        laga = self._laga(0)
+        self._baris('Tanpa posisi', 6.5, laga, position='', goals=1, assists=1, duels_won=2)
+
+        out = StringIO()
+        call_command('calibrate_ratings', '--semua-posisi', stdout=out)
+        self.assertIn('nggak punya posisi', out.getvalue())
