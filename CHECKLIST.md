@@ -24,7 +24,7 @@ Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **�
 | 6 — Live | 0 | 3 | 9 | 0 | Belum dimulai |
 | Lintas halaman | 3 | 5 | 3 | 0 | Helper konvensi skor lahir, baru dipakai satu halaman |
 
-**314 test lulus.** Sembilan halaman hidup: `/`, `/jadwal/`, `/pra/`, `/pasca/`,
+**324 test lulus.** Sembilan halaman hidup: `/`, `/jadwal/`, `/pra/`, `/pasca/`,
 `/skuad/`, `/statistik/`, `/berita/`, `/cedera/`, `/match/<id>/`.
 
 > Angka Tahap 1 sebelumnya salah hitung (tertulis 7/4/1/1 untuk 15 baris).
@@ -188,16 +188,27 @@ menit per posisi, usia, dan output per 90.
 **Utang yang masih berdiri:**
 - Aturan 4 SQ-01 (susunan resmi menimpa semuanya) bertes tapi jarang menyala:
   penarik kita baru mendapat susunan pada atau sesudah kick-off.
-- 'Tyrell Malacia' punya dua record dan `merge_duplicates` sengaja melewatinya
-  — salah satunya bertim "No Club" sehingga aturan pengaman "main di tanggal
-  sama untuk klub berbeda" kena palsu. Butuh mata manusia.
+- **Recall detektor berita rendah.** Di 484 berita produksi (10 hari) hasilnya
+  0 temuan sah — semua penolakannya benar, tapi genre judul yang dominan itu
+  rangkuman ("Amad, Mount, Baleba — injury news and return dates"), bukan klaim
+  per pemain. Panel Konflik Sumber akan sering kosong sampai ada judul yang
+  jelas menyebut satu pemain.
+- 'Tyrell Malacia' (lokal) punya dua record dan `merge_duplicates` sengaja
+  melewatinya — salah satunya bertim "No Club" sehingga aturan pengaman "main
+  di tanggal sama untuk klub berbeda" kena palsu. Butuh mata manusia.
 - Sebagian besar pemain lawan `position`-nya kosong. Mereka dinilai pakai
   bobot TENGAH, dan itu membatasi seberapa jauh `calibrate_ratings` bisa
   dipercaya (134 dari 377 baris yang bisa dipakai).
 
-**Sudah lunas hari ini:**
+**Sudah lunas:**
+- **Produksi sudah jalan** — 9 halaman 200, dua migrasi terpasang, backup
+  terverifikasi diambil sebelum migrate.
+- **Cron `derive_availability_news`** tiap jam :45 (17 job sekarang).
 - Bobot nilai pemain **sudah diukur** terhadap rating FotMob (r = 0,850,
   sebaran 0,76 vs 0,74) dan sengaja tidak diubah — uji silangnya menolak.
   `python manage.py calibrate_ratings --cari` mengulang pemeriksaannya.
 - `matches/scoreline.py` dipakai `match_result` dan Dashboard, bukan cuma Pasca.
-- Baris pemain ganda: `merge_duplicates` sudah menangkapnya.
+- Duplikat pemain produksi digabung: 3169 → 3167 record, **statistik tetap
+  27.887** (tidak ada yang hilang), skuad MU tetap 38.
+- `deploy-exclude.txt` — perintah rsync di README ternyata bakal menghapus
+  `.htaccess`, `scripts/backup-db.sh`, dan seluruh `backups/`.

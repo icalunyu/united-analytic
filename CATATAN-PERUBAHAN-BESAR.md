@@ -1517,3 +1517,93 @@ menuliskan peringatan kalau `--semua-posisi` dipakai.
   sama untuk klub berbeda"). Salah satu record-nya bertim "No Club", jadi
   aturannya kena palsu. Butuh mata manusia, bukan pelonggaran aturan — aturan
   itu yang dulu mencegah record asli kehapus.
+
+## 26. Deploy, cron, dan dua jebakan operasional
+
+### `rsync --delete` yang didokumentasikan bisa mematikan situs
+
+README menyuruh:
+
+```bash
+rsync -av --delete \
+  --exclude '__pycache__' --exclude 'staticfiles' --exclude '.env' \
+  --exclude 'db.sqlite3' --exclude 'tests.py' \
+  -e 'ssh -p 64000' backend/ musafarw@...:~/mu-analytics/
+```
+
+`--dry-run` bilang perintah itu bakal menghapus **39 hal**, karena app root
+di server bukan cuma isi `backend/`:
+
+| Yang kehapus | Akibatnya |
+|---|---|
+| `.htaccess` | `PassengerAppRoot` hilang — **situs mati total** |
+| `scripts/backup-db.sh` | cron backup harian 03:30 gagal diam-diam |
+| `backups/` + semua `*.dump` | arsip backup di server lenyap |
+| `.well-known/acme-challenge/` | perpanjangan sertifikat SSL gagal |
+| `tmp/restart.txt` | trigger restart Passenger hilang |
+| `logs/`, `php.ini`, `.user.ini` | log dan konfigurasi PHP |
+
+Sekarang ada `deploy-exclude.txt` di root repo, dan README menyuruh
+`--dry-run` sampai hitungan `^deleting` nol sebelum menembak sungguhan.
+
+Perintah lama itu kemungkinan besar **belum pernah dijalankan apa adanya** —
+kalau pernah, situsnya sudah mati sejak dulu.
+
+### `crontab -l` di cPanel mencetak ke STDOUT
+
+Menambah satu baris cron dengan cara yang biasa:
+
+```bash
+{ crontab -l; echo "$BARIS"; } | crontab -
+```
+
+gagal dengan `"-":1: bad minute`. Penyebabnya: wrapper crontab cPanel menulis
+`Backup of musafarw's previous crontab saved to ...` ke **stdout**, bukan
+stderr. Baris itu ikut terpipe balik dan jadi baris crontab yang tidak sah,
+lalu seluruh instalasi ditolak.
+
+Untungnya ditolak, bukan diterima separuh — crontab lama selamat. Tapi skrip
+saya sempat mencetak "ditambahkan" padahal gagal, jadi **verifikasinya yang
+menyelamatkan**, bukan exit code-nya. Cara yang benar:
+
+```bash
+crontab -l 2>/dev/null | grep -vE "^Backup of .* previous crontab saved to" > /tmp/cron.baru
+```
+
+### Detektor berita: dua putaran, keduanya dari data sungguhan
+
+Dijalankan di 484 berita produksi (10 hari): **0 temuan**. Detektor yang tidak
+pernah menyala tidak bisa dibedakan dari detektor rusak, jadi judulnya
+diperiksa satu per satu. Dari 37 judul yang menyebut kata cedera, semuanya
+memang layak ditolak — genre judulnya rangkuman, bukan klaim per pemain.
+
+Tapi pemeriksaan itu membuka lubang yang belum pernah menyala: `temuan()`
+melooping seluruh pemain dan menandai **setiap** nama yang cocok dengan status
+yang sama. Satu judul rangkuman akan menandai semuanya sekaligus — padahal
+isinya justru menjelaskan bahwa nasib mereka berbeda.
+
+Ditambah aturan "tepat satu nama MU", polanya dilonggarkan, dan produksi
+langsung menunjukkan bahwa itu **masih belum cukup**:
+
+> "Five Man Utd stars to miss Ipswich clash as Michael Carrick must deal with
+> early 'doubt' over Mason Mount"
+
+Satu nama MU saja yang tertulis, jadi aturan nama lolos. Pola "to miss"
+menyala. Hasilnya Mason Mount ditulis ABSEN — padahal judul yang sama menyebut
+dia *doubt*, dan "to miss" milik lima pemain lain yang tidak disebut namanya.
+
+`PENOLAK_JAMAK` menutupnya: judul yang menghitung orang ("five stars", "two
+players") atau memakai kata jamak untuk pemain tidak pernah dipakai. Angka
+yang diikuti satuan waktu ("out for three weeks") tetap lolos.
+
+**Pelajaran buat tes.** Tes lama saya lulus karena alasan yang salah: dia
+memakai potongan judul yang kebetulan tidak memuat nama pemain. Judul di tes
+sekarang disalin UTUH dari feed.
+
+### Recall-nya rendah, dan itu harus disebut
+
+Sesudah semua perbaikan, di 484 berita produksi hasilnya tetap **0 temuan yang
+sah**. Itu bukan kegagalan — semua penolakannya benar — tapi artinya panel
+Konflik Sumber akan sering kosong. Sumber kedua ini menyala waktu ada judul
+per-pemain yang jelas ("Mount ruled out for three weeks"), dan genre judul
+yang dominan bukan itu.
