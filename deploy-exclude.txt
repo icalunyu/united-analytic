@@ -1,0 +1,19 @@
+__pycache__
+staticfiles
+tests.py
+.env
+db.sqlite3
+# --- milik server, BUKAN milik repo. Menghapusnya bikin situs mati. ---
+/.htaccess
+/.user.ini
+/php.ini
+/.well-known/
+/public/
+# --- operasional: backup, log, skrip, trigger restart Passenger ---
+/scripts/
+/backups/
+/logs/
+/tmp/
+# --- arsip & cadangan manual ---
+*.dump
+*.bak-*

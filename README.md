@@ -170,11 +170,28 @@ Server ini (DomaiNesia, `musafar.web.id`) udah pernah dipakai buat deploy app Dj
 
    ```bash
    # dari root repo di lokal — perhatikan backend/ diratakan ke app root
-   rsync -av --delete \
-     --exclude '__pycache__' --exclude 'staticfiles' --exclude '.env' \
-     --exclude 'db.sqlite3' --exclude 'tests.py' \
+   rsync -av --delete --exclude-from=deploy-exclude.txt \
      -e 'ssh -p 64000' backend/ musafarw@sanremo.sg.rapidplex.com:~/mu-analytics/
    ```
+
+   > **Jangan pernah jalanin `--delete` tanpa `deploy-exclude.txt`.**
+   > App root di server bukan cuma isi `backend/` — dia juga menampung file
+   > milik server dan file operasional yang **tidak ada di repo**. Versi lama
+   > perintah ini cuma mengecualikan lima pola, dan waktu dicoba `--dry-run`
+   > ternyata bakal menghapus **39 hal**, termasuk:
+   >
+   > - `.htaccess` — konfigurasi `PassengerAppRoot`. Hilang = situs mati total.
+   > - `scripts/backup-db.sh` — yang dipanggil cron backup harian.
+   > - seluruh `backups/` dan semua `*.dump` — arsip backup di server.
+   > - `.well-known/acme-challenge/` — dipakai perpanjangan sertifikat SSL.
+   > - `tmp/restart.txt`, `logs/`, `php.ini`, `.user.ini`.
+   >
+   > Selalu `--dry-run` dulu dan pastikan barisnya nol:
+   > ```bash
+   > rsync -av --delete --dry-run --exclude-from=deploy-exclude.txt \
+   >   -e 'ssh -p 64000' backend/ musafarw@sanremo.sg.rapidplex.com:~/mu-analytics/ \
+   >   | grep -c '^deleting'
+   > ```
    lalu di server:
    ```bash
    cd ~/mu-analytics

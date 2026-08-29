@@ -273,3 +273,80 @@ class TurunanKetersediaanDBTests(TestCase):
         )
         self.assertEqual(bersihkan(timezone.now(), kecuali_ids=set()), 1)
         self.assertFalse(PlayerAvailability.objects.filter(source=DataSource.NEWS).exists())
+
+
+class JudulRangkumanTests(TestCase):
+    """Judul rangkuman tidak boleh menandai semua nama yang disebutnya.
+
+    Ini lubang yang ketemu waktu memeriksa 484 berita produksi: genre judul
+    sepak bola Inggris didominasi rangkuman — 'Amad, Mount, Baleba — injury
+    news and return dates', 'Five Man Utd stars to miss Ipswich clash'. Isinya
+    justru menjelaskan bahwa nasib mereka BERBEDA, jadi menempelkan satu
+    status ke semuanya adalah kebalikan dari yang diberitakan.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from players.models import Player, Team
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        cls.amad = Player.objects.create(name='Amad Diallo', team=cls.mu, is_active=True)
+        cls.mount = Player.objects.create(name='Mason Mount', team=cls.mu, is_active=True)
+        cls.bruno = Player.objects.create(name='Bruno Fernandes', team=cls.mu, is_active=True)
+
+    def _berita(self, judul):
+        return NewsItem.objects.create(
+            publisher='Manchester Evening News',
+            publisher_group='Reach plc',
+            tier='B',
+            title=judul,
+            url=f'https://x.test/{abs(hash(judul))}',
+            published_at=timezone.now(),
+        )
+
+    def _jalankan(self):
+        from news.availability import temuan
+
+        return temuan(
+            list(NewsItem.objects.all()),
+            [self.amad, self.mount, self.bruno],
+            timezone.now(),
+        )
+
+    def test_judul_menyebut_dua_pemain_diabaikan(self):
+        self._berita('Amad Diallo and Mason Mount ruled out for three weeks')
+        self.assertEqual(self._jalankan(), [])
+
+    def test_judul_menyebut_satu_pemain_diterima(self):
+        from players.models import PlayerAvailability
+
+        self._berita('Mason Mount ruled out for three weeks')
+        hasil = self._jalankan()
+        self.assertEqual(len(hasil), 1)
+        self.assertEqual(hasil[0][0].name, 'Mason Mount')
+        self.assertEqual(hasil[0][1], PlayerAvailability.Status.OUT)
+
+    def test_rangkuman_nyata_dari_produksi_ditolak(self):
+        """Judul-judul ini benar-benar ada di feed, dan semuanya harus diam."""
+        for judul in (
+            'Amad, Mount, Baleba - Man United injury news and return dates for Ipswich',
+            'Manchester United issue injury update on two players with one to return',
+            'Bruno Fernandes injury latest',
+        ):
+            NewsItem.objects.all().delete()
+            self._berita(judul)
+            self.assertEqual(self._jalankan(), [], judul)
+
+    def test_pola_to_miss_kini_kena_kalau_satu_nama(self):
+        """Pelonggaran polanya aman justru karena aturan satu-nama."""
+        from players.models import PlayerAvailability
+
+        self._berita('Bruno Fernandes set to miss Ipswich clash')
+        hasil = self._jalankan()
+        self.assertEqual(len(hasil), 1)
+        self.assertEqual(hasil[0][1], PlayerAvailability.Status.OUT)
+
+    def test_lima_bintang_to_miss_tetap_ditolak(self):
+        """Pola longgar + nol nama = tetap diam."""
+        self._berita('Five Man Utd stars to miss Ipswich clash')
+        self.assertEqual(self._jalankan(), [])

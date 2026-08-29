@@ -41,8 +41,8 @@ POLA = (
         Status.OUT,
         re.compile(
             r'\b(ruled out|out for (?:the|\d|several|a few|weeks|months)'
-            r'|sidelined|will miss|set to miss|to miss (?:the|\d)'
-            r'|misses? (?:the rest|out on)|out until|face[sd]? (?:weeks|months) out'
+            r'|sidelined|will miss|to miss\b|out until'
+            r'|face[sd]? (?:weeks|months) out'
             r'|undergo(?:es|ne)? surgery|surgery ruled)\b',
             re.I,
         ),
@@ -116,10 +116,27 @@ def baca_status(judul):
     return None
 
 
+def pemain_disebut(judul, pemain):
+    """Pemain MU yang namanya muncul di judul."""
+    return [p for p in pemain if cocok_nama(judul, p) is not None]
+
+
 def temuan(berita, pemain, sekarang):
     """[(player, status, item)] — satu temuan per pemain, yang paling baru menang.
 
     Fungsi murni supaya bisa dites tanpa DB dan tanpa jaringan.
+
+    **Judul harus menyebut TEPAT SATU pemain MU.** Ini bukan kehati-hatian
+    berlebihan, ini menutup lubang yang nyata. Genre judul sepak bola Inggris
+    didominasi rangkuman: *"Amad, Mount, Baleba — Man United injury news and
+    return dates"*, *"Five Man Utd stars to miss Ipswich clash"*. Tanpa aturan
+    ini, satu judul rangkuman menandai SEMUA nama yang kebetulan disebut
+    dengan status yang sama — padahal isinya justru menjelaskan bahwa nasib
+    mereka berbeda-beda.
+
+    Diperiksa di 484 berita produksi: 37 judul menyebut kata cedera, dan tidak
+    satu pun mengklaim status satu pemain secara utuh. Jadi aturan ini memang
+    menutup lubang yang akan sering kena, bukan kasus langka.
     """
     batas = sekarang - UMUR_MAKS
     hasil = {}
@@ -130,12 +147,13 @@ def temuan(berita, pemain, sekarang):
         status = baca_status(item.title)
         if status is None:
             continue
-        for p in pemain:
-            if cocok_nama(item.title, p) is None:
-                continue
-            lama = hasil.get(p.pk)
-            if lama is None or terbit > lama[2].published_at:
-                hasil[p.pk] = (p, status, item)
+        disebut = pemain_disebut(item.title, pemain)
+        if len(disebut) != 1:
+            continue
+        p = disebut[0]
+        lama = hasil.get(p.pk)
+        if lama is None or terbit > lama[2].published_at:
+            hasil[p.pk] = (p, status, item)
     return sorted(hasil.values(), key=lambda t: t[0].name)
 
 
