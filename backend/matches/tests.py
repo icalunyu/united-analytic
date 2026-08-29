@@ -1,3 +1,5 @@
+import re
+
 from django.test import SimpleTestCase, TestCase
 
 from matches.management.commands.pull_fotmob import Command as PullFotMobCommand
@@ -2304,13 +2306,31 @@ class GeneratorPromptTests(TestCase):
         teks = prompts.susun(self.match, [], [], [])
         self.assertLess(teks.index('ATURAN TEKS'), teks.index('DATA YANG BOLEH DIPAKAI'))
 
-    def test_larangan_foto_dan_lambang_selalu_ada(self):
+    def test_foto_laga_diarahkan_bukan_dilarang(self):
+        """Handoff aslinya melarang foto. Dicabut atas permintaan user: alur
+        kerjanya melampirkan foto laga sendiri, dan slide teks saja terlalu
+        kering. Yang tersisa cuma arahan supaya foto lampiran yang dipakai."""
         from matches import prompts
 
         for tipe in prompts.TIPE:
             teks = prompts.susun(self.match, [], [], [], tipe=tipe)
-            self.assertIn('lambang klub', teks, tipe)
-            self.assertIn('foto pemain', teks, tipe)
+            self.assertIn('Foto laga dilampirkan', teks, tipe)
+            self.assertNotIn('JANGAN memakai foto pemain', teks, tipe)
+
+    def test_wajah_generatif_tetap_dicegah(self):
+        """Foto asli boleh, wajah karangan tidak — hasilnya nggak pernah mirip."""
+        from matches import prompts
+
+        teks = prompts.susun(self.match, [], [], [])
+        self.assertIn('mengarang wajah pemain secara generatif', teks)
+
+    def test_istilah_inggris_boleh_dicampur(self):
+        """Memaksa terjemahan bikin pembaca berhenti — 'simpangan baku' buktinya."""
+        from matches import prompts
+
+        teks = prompts.susun(self.match, [], [], [])
+        self.assertIn('boleh dicampur istilah Inggris', teks)
+        self.assertNotIn('- Bahasa Indonesia.\n', teks)
 
     def test_tanpa_fakta_tercentang_prompt_melarang_mengarang(self):
         from matches import prompts
@@ -2323,7 +2343,8 @@ class GeneratorPromptTests(TestCase):
 
         angka = [{
             'label': 'xG', 'nilai_teks': '2,71', 'pembanding': 'rata-rata musim 1,4',
-            'simpangan_teks': '2,1× simpangan baku di atas kebiasaan',
+            'simpangan_kata': 'sangat jauh di atas kebiasaan', 'sd_teks': '2,1',
+            'simpangan_teks': 'sangat jauh di atas kebiasaan (2,1 standard deviation)',
         }]
         teks = prompts.susun(self.match, [], angka, [], sumber='sistem')
         self.assertIn('2,71', teks)
@@ -2333,7 +2354,8 @@ class GeneratorPromptTests(TestCase):
 
         angka = [{
             'label': 'xG', 'nilai_teks': '2,71', 'pembanding': 'rata-rata musim 1,4',
-            'simpangan_teks': '2,1× simpangan baku di atas kebiasaan',
+            'simpangan_kata': 'sangat jauh di atas kebiasaan', 'sd_teks': '2,1',
+            'simpangan_teks': 'sangat jauh di atas kebiasaan (2,1 standard deviation)',
         }]
         feed = prompts.susun(self.match, [], angka, [], tipe='feed', sumber='sistem')
         thread = prompts.susun(self.match, [], angka, [], tipe='thread', sumber='sistem')
@@ -2389,6 +2411,55 @@ class LangitLangitNilaiTests(SimpleTestCase):
         self.assertEqual(hasil[0]['player'].name, 'Zulkarnain')
 
 
+class BahasaSimpanganTests(SimpleTestCase):
+    """Kalimat penjelas harus bisa dibaca orang yang bukan ahli statistik.
+
+    "1,4x simpangan baku di bawah kebiasaan" tepat secara teknis dan tidak
+    berarti apa-apa buat yang membacanya — dan kalimat ini ujungnya masuk
+    prompt konten yang isinya disuruh disalin persis.
+    """
+
+    def test_maknanya_ditulis_dengan_kata_biasa(self):
+        from matches.key_numbers import kata_simpangan
+
+        self.assertEqual(kata_simpangan(1.4)[0], 'jauh di atas kebiasaan')
+        self.assertEqual(kata_simpangan(-2.3)[0], 'sangat jauh di bawah kebiasaan')
+        self.assertEqual(kata_simpangan(0.7)[0], 'sedikit di atas kebiasaan')
+
+    def test_istilah_teknisnya_tidak_diterjemahkan_paksa(self):
+        """Kata 'simpangan baku' tidak boleh muncul di mana pun yang dibaca user."""
+        from matches.key_numbers import kata_simpangan
+
+        kata, sd = kata_simpangan(-1.4)
+        self.assertNotIn('simpangan baku', kata)
+        self.assertEqual(sd, '1,4')
+
+    def test_kata_dan_angka_tidak_pernah_berselisih(self):
+        """z=0,95 dan z=1,04 sama-sama tampil '1,0' kalau dibulatkan belakangan
+        — dan dulu yang satu tertulis 'sedikit', yang lain 'jauh'."""
+        from matches.key_numbers import kata_simpangan
+
+        kata_a, sd_a = kata_simpangan(0.95)
+        kata_b, sd_b = kata_simpangan(1.04)
+        self.assertNotEqual(sd_a, sd_b)
+        for skor in (0.94, 0.96, 1.03, 1.06, 1.99, 2.01):
+            kata, sd = kata_simpangan(skor)
+            besar = float(sd.replace(',', '.'))
+            harusnya = (
+                'sangat jauh' if besar >= 2.0 else 'jauh' if besar >= 1.0 else 'sedikit'
+            )
+            self.assertTrue(kata.startswith(harusnya), f'{skor} -> {kata} / {sd}')
+
+    def test_rata_rata_tidak_berpresisi_palsu(self):
+        """'rata-rata musim 25,27' untuk hitungan sapuan menyiratkan ketelitian
+        yang tidak dimiliki angkanya. Tapi rata-rata xG memang hidup di dua
+        desimal."""
+        from matches.key_numbers import format_rata
+
+        self.assertEqual(format_rata(25.27, ''), '25,3')
+        self.assertEqual(format_rata(1.41, ''), '1,41')
+
+
 class FormatAngkaIndonesiaTests(SimpleTestCase):
     """Semua angka yang dibaca manusia pakai koma.
 
@@ -2407,8 +2478,11 @@ class FormatAngkaIndonesiaTests(SimpleTestCase):
             [],
         )
         self.assertTrue(hasil)
-        self.assertNotIn('.', hasil[0]['simpangan_teks'])
-        self.assertIn(',', hasil[0]['simpangan_teks'])
+        # Yang diuji pemisah desimalnya, bukan ada-tidaknya titik di kalimat.
+        angka = re.search(r'\(([\d.,]+) standard deviation\)', hasil[0]['simpangan_teks'])
+        self.assertIsNotNone(angka, hasil[0]['simpangan_teks'])
+        self.assertIn(',', angka.group(1))
+        self.assertNotIn('.', angka.group(1))
 
 
 class KalibrasiNilaiTests(TestCase):

@@ -81,6 +81,42 @@ def z(nilai, contoh):
     return (nilai - rata) / sb, rata, sb
 
 
+# Kalimat yang dibaca manusia, bukan istilah statistik.
+#
+# "1,4x simpangan baku di bawah kebiasaan" itu tepat secara teknis dan tidak
+# berarti apa-apa buat yang membacanya. Kalimat ini ujungnya masuk laporan dan
+# prompt konten — kalau pesannya tidak sampai, ketepatannya tidak menolong.
+#
+# Jadi maknanya ditulis dengan kata biasa lebih dulu, dan angka teknisnya
+# ditaruh dalam kurung untuk yang memang mencarinya. Istilahnya dibiarkan
+# BAHASA INGGRIS ("standard deviation") karena itu memang bentuk yang dikenal
+# orang; "simpangan baku" justru menambah satu lapis tebakan.
+TINGKAT_SIMPANGAN = (
+    (2.0, 'sangat jauh'),
+    (1.0, 'jauh'),
+    (0.0, 'sedikit'),
+)
+
+
+def kata_simpangan(skor):
+    """('jauh di bawah kebiasaan', '1,4') — kata dan angkanya dipisah.
+
+    Dipisah supaya pemanggilnya bisa merangkai kalimat tanpa kurung bersarang.
+    Versi pertama mengembalikan satu string berisi kurung, dan begitu prompt
+    membungkusnya lagi hasilnya `(rata-rata musim 4,7, jauh di bawah kebiasaan
+    (1,4 standard deviation))` — benar, dan tidak terbaca.
+
+    Tingkatnya dihitung dari angka yang SUDAH dibulatkan, bukan dari skor
+    mentah. Kalau tidak, z=0,95 dan z=1,04 sama-sama tampil "1,0" tapi yang
+    satu tertulis "sedikit" dan yang lain "jauh" — dua kalimat berbeda untuk
+    angka yang terlihat identik.
+    """
+    besar = round(abs(skor), 1)
+    seberapa = next(kata for ambang, kata in TINGKAT_SIMPANGAN if besar >= ambang)
+    arah = 'di atas' if skor > 0 else 'di bawah'
+    return f'{seberapa} {arah} kebiasaan', f'{besar:.1f}'.replace('.', ',')
+
+
 def format_angka(v, satuan):
     if v is None:
         return '–'
@@ -89,6 +125,18 @@ def format_angka(v, satuan):
     else:
         teks = f'{v:.2f}'.rstrip('0').rstrip('.').replace('.', ',')
     return f'{teks}{satuan}'
+
+
+def format_rata(v, satuan):
+    """Rata-rata musim, dibulatkan sesuai besarannya.
+
+    'rata-rata musim 25,27' untuk hitungan sapuan itu presisi palsu — dua
+    desimal menyiratkan ketelitian yang tidak dimiliki angkanya. Tapi rata-rata
+    xG memang hidup di dua desimal, jadi pembulatannya ikut besaran.
+    """
+    if v is None:
+        return '–'
+    return format_angka(round(v, 2 if abs(v) < 3 else 1), satuan)
 
 
 def hitung(baris_mu, baris_lawan, riwayat_mu, riwayat_lawan, jumlah=4):
@@ -119,6 +167,7 @@ def hitung(baris_mu, baris_lawan, riwayat_mu, riwayat_lawan, jumlah=4):
         if skor is None:
             continue
 
+        kata, sd_teks = kata_simpangan(skor)
         condong = skor * arah  # positif = menguntungkan MU
         hasil.append(
             {
@@ -127,20 +176,16 @@ def hitung(baris_mu, baris_lawan, riwayat_mu, riwayat_lawan, jumlah=4):
                 'nilai': nilai,
                 'nilai_teks': format_angka(nilai, satuan),
                 'rata': rata,
-                'rata_teks': format_angka(round(rata, 2), satuan),
+                'rata_teks': format_rata(rata, satuan),
                 'z': round(skor, 2),
                 'condong': round(condong, 2),
                 'arah': 'untung' if condong > 0.5 else ('rugi' if condong < -0.5 else 'netral'),
-                'pembanding': (
-                    f'rata-rata musim {format_angka(round(rata, 2), satuan)}'
-                ),
-                # Koma, bukan titik — kalimat ini masuk laporan dan prompt
-                # berbahasa Indonesia, dan satu angka bertitik di tengah
-                # angka-angka berkoma langsung kelihatan seperti salah salin.
-                'simpangan_teks': (
-                    f'{abs(skor):.1f}'.replace('.', ',') + '× simpangan baku '
-                    f'{"di atas" if skor > 0 else "di bawah"} kebiasaan'
-                ),
+                'pembanding': f'rata-rata musim {format_rata(rata, satuan)}',
+                # Dipisah supaya pemanggilnya bisa merangkai tanpa kurung
+                # bersarang; `simpangan_teks` versi siap-pakai buat kartu.
+                'simpangan_kata': kata,
+                'sd_teks': sd_teks,
+                'simpangan_teks': f'{kata} ({sd_teks} standard deviation)',
             }
         )
 

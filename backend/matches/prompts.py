@@ -18,6 +18,20 @@ Semua angka disalin apa adanya dari kartu yang menghasilkannya. Tidak ada
 pemformatan ulang di modul ini — begitu prompt memformat ulang sebuah angka,
 angka di konten bisa berbeda dari angka di app, dan itu persis kesalahan yang
 kartu ini seharusnya cegah.
+
+**Dua penyimpangan dari handoff, keduanya atas permintaan user.**
+
+1. Handoff menyuruh GAYA VISUAL memuat *"larangan foto pemain dan lambang
+   klub"*. Larangan itu dicabut: alur kerjanya sekarang user melampirkan foto
+   laga sendiri bersama prompt ini, dan slide berisi teks saja dinilai terlalu
+   kering. Yang tersisa cuma arahan supaya foto lampiran itu yang dipakai —
+   bukan wajah yang dikarang model, karena hasilnya tidak pernah mirip.
+
+2. Handoff menyuruh ATURAN TEKS memaksa bahasa Indonesia. Sekarang campuran
+   diizinkan untuk istilah yang memang hidup dalam bahasa Inggris (xG, clean
+   sheet, matchday). Menerjemahkan paksa istilah teknis bikin pembacanya
+   berhenti — persis yang terjadi pada "simpangan baku", yang sekarang ditulis
+   "standard deviation".
 """
 
 from matches import scoreline
@@ -112,18 +126,32 @@ NADA = {
 def _baris_data(momen, angka, nilai_pemain, sumber):
     """Daftar fakta yang boleh dipakai, apa adanya."""
     baris = []
+    teks_momen = ''
+
     if sumber in ('moments', 'gabungan'):
         for m in momen:
             menit = f"{m.minute}' " if m.minute is not None else ''
             angka_teks = f' [{m.figure}]' if m.figure else ''
             baris.append(f'- {menit}{m.text}{angka_teks}')
+        teks_momen = ' '.join(m.text for m in momen)
+
     if sumber in ('sistem', 'gabungan'):
         for a in angka:
+            # Rata, tanpa kurung bersarang. Versi lama membungkus kalimat yang
+            # sudah berkurung jadi `(rata-rata musim 4,7, jauh di bawah
+            # kebiasaan (1,4 standard deviation))` — benar, tapi tidak terbaca.
             baris.append(
-                f'- {a["label"]}: {a["nilai_teks"]} ({a["pembanding"]}, {a["simpangan_teks"]})'
+                f'- {a["label"]}: {a["nilai_teks"]} — {a["simpangan_kata"]} '
+                f'({a["pembanding"]} · {a["sd_teks"]} standard deviation)'
             )
         for r in nilai_pemain[:3]:
             if r['nilai'] is None:
+                continue
+            # Detektor PS-04 juga menghasilkan momen "X dinilai 9,0". Kalau
+            # sumbernya 'gabungan', fakta yang sama masuk dua kali dengan
+            # kalimat berbeda — dan model yang menerimanya bakal menganggapnya
+            # dua bahan terpisah lalu memakai dua-duanya.
+            if r['player'].name in teks_momen:
                 continue
             ekor = f' — {", ".join(r["kontribusi"])}' if r['kontribusi'] else ''
             baris.append(f'- Nilai {r["player"].name}: {r["teks"]}{ekor}')
@@ -150,8 +178,16 @@ def susun(match, momen, angka, nilai_pemain, tipe='carousel', sumber='gabungan')
         'semua ANGKA memakai font monospace.'
     )
     bagian.append(
-        '- JANGAN memakai foto pemain, wajah orang, lambang klub, logo kompetisi, '
-        'atau maskot apa pun.'
+        '- Foto laga dilampirkan bersama prompt ini. Pakai foto itu sebagai '
+        'dasar visualnya, dan JANGAN mengarang wajah pemain secara generatif — '
+        'wajah buatan tidak pernah mirip dan langsung ketahuan.'
+    )
+    bagian.append(
+        '- Kalau tidak ada foto yang dilampirkan, pakai komposisi grafis saja.'
+    )
+    bagian.append(
+        '- Teks harus tetap terbaca di atas foto: beri lapisan gelap transparan '
+        'atau taruh teks di area foto yang paling kosong.'
     )
     bagian.append('- Banyak ruang kosong. Satu gagasan per slide.')
     bagian.append('')
@@ -159,7 +195,12 @@ def susun(match, momen, angka, nilai_pemain, tipe='carousel', sumber='gabungan')
     bagian.append('ATURAN TEKS')
     bagian.append('- Tulis teks PERSIS seperti yang tertulis di bagian DATA di bawah.')
     bagian.append('- JANGAN mengubah, membulatkan, menyingkat, atau menghitung ulang angka.')
-    bagian.append('- Bahasa Indonesia.')
+    bagian.append(
+        '- Bahasa Indonesia, boleh dicampur istilah Inggris yang memang lazim '
+        'dipakai orang sepak bola (xG, clean sheet, matchday, standard '
+        'deviation, big chance). JANGAN memaksa menerjemahkannya — istilah '
+        'yang diterjemahkan setengah-setengah justru bikin pembaca berhenti.'
+    )
     bagian.append('- JANGAN menambah kalimat, klaim, atau angka yang tidak ada di bagian DATA.')
     bagian.append('- Kalau sebuah slide kekurangan bahan, biarkan lebih kosong — jangan diisi karangan.')
     bagian.append('')
@@ -199,7 +240,7 @@ def caption(match, momen, angka, nada='analis'):
         fakta = momen[0].text
     elif angka:
         a = angka[0]
-        fakta = f'{a["label"]} {a["nilai_teks"]} ({a["pembanding"]}).'
+        fakta = f'{a["label"]} {a["nilai_teks"]} — {a["pembanding"]}.'
     if fakta:
         baris.append(fakta)
     baris.append(NADA.get(nada, NADA['analis']))

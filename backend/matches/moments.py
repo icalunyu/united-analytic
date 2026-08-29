@@ -68,8 +68,8 @@ def deteksi(match, baris_mu, baris_lawan, angka, nilai_pemain, stats_mu):
         if abs(a['z']) >= MIN_Z_ANGKA:
             hasil.append(
                 (None,
-                 f'{a["label"]} {a["nilai_teks"]} — {a["simpangan_teks"]}, '
-                 f'{a["pembanding"]}.',
+                 f'{a["label"]} {a["nilai_teks"]} — {a["simpangan_kata"]}, '
+                 f'{a["pembanding"]} ({a["sd_teks"]} standard deviation).',
                  a['nilai_teks'], 'PS-02')
             )
 

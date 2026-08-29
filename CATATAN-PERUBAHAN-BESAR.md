@@ -1607,3 +1607,62 @@ sah**. Itu bukan kegagalan — semua penolakannya benar — tapi artinya panel
 Konflik Sumber akan sering kosong. Sumber kedua ini menyala waktu ada judul
 per-pemain yang jelas ("Mount ruled out for three weeks"), dan genre judul
 yang dominan bukan itu.
+
+## 27. Bahasa prompt: berhenti menerjemahkan paksa
+
+User menyalin prompt dari halaman Pasca dan berhenti di satu frasa:
+*"1,4× simpangan baku di bawah kebiasaan"*. Tepat secara teknis, dan tidak
+berarti apa-apa buat yang membacanya.
+
+Aturannya sekarang: **istilah yang memang hidup dalam bahasa Inggris ditulis
+dalam bahasa Inggris.** "standard deviation", bukan "simpangan baku".
+Menerjemahkannya justru menambah satu lapis tebakan, bukan mengurangi.
+
+Bentuk barunya menaruh maknanya lebih dulu dengan kata biasa, angka teknisnya
+menyusul dalam kurung:
+
+```
+jauh di bawah kebiasaan (rata-rata musim 4,7 · 1,4 standard deviation)
+```
+
+### Tiga hal lain yang baru ketahuan sesudah prompt utuhnya dibaca
+
+Semuanya lolos tes, dan semuanya kelihatan begitu hasilnya dibaca seperti
+user membacanya.
+
+**Kurung bersarang.** `kata_simpangan` dulu mengembalikan satu string yang
+sudah berkurung, lalu prompt membungkusnya lagi:
+`(rata-rata musim 4,7, jauh di bawah kebiasaan (1,4 standard deviation))`.
+Benar, dan tidak terbaca. Sekarang kata dan angkanya dikembalikan terpisah
+supaya pemanggilnya bisa merangkai sendiri.
+
+**Kata dan angka berselisih.** Tingkatnya dihitung dari skor mentah, tapi yang
+ditampilkan angka yang sudah dibulatkan. Akibatnya z=0,95 dan z=1,04 sama-sama
+tampil "1,0" — yang satu tertulis *sedikit*, yang lain *jauh*. Dua kalimat
+berbeda untuk angka yang terlihat identik. Sekarang tingkatnya dihitung dari
+angka yang sudah dibulatkan.
+
+**Fakta yang sama masuk dua kali.** Detektor PS-04 menghasilkan momen
+*"Bruno Fernandes dinilai 10,0"*, dan daftar nilai pemain menghasilkan
+*"Nilai Bruno Fernandes: 10,0"*. Dengan sumber `gabungan` keduanya masuk, dan
+model yang menerimanya menganggapnya dua bahan terpisah lalu memakai
+dua-duanya. Sekarang baris nilai dilewati kalau namanya sudah disebut momen.
+
+**Presisi palsu.** `rata-rata musim 25,27` untuk hitungan sapuan menyiratkan
+ketelitian yang tidak dimiliki angkanya. Pembulatannya sekarang ikut besaran —
+dua desimal cuma untuk angka di bawah 3, karena rata-rata xG memang hidup di
+situ.
+
+### Larangan foto dicabut
+
+Handoff menyuruh GAYA VISUAL memuat *"larangan foto pemain dan lambang klub"*.
+Dicabut atas permintaan user: alur kerjanya melampirkan foto laga sendiri
+bersama prompt, dan slide berisi teks saja dinilai terlalu kering.
+
+Yang menggantikan bukan kekosongan, tapi arahan yang melayani alur itu: pakai
+foto lampiran, **jangan mengarang wajah pemain secara generatif** (wajah buatan
+tidak pernah mirip), dan jaga teks tetap terbaca di atas foto.
+
+Catatan yang perlu diingat pemakainya: lambang klub dan logo kompetisi itu
+merek dagang. Handoff menghindarinya bukan karena selera — tapi itu keputusan
+user, bukan keputusan app.

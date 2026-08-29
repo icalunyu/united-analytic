@@ -137,8 +137,9 @@ def paragraf_angka(angka, terbaik, varian=0):
         utama = urut[0]
         kalimat.append(
             f'Angka yang paling jauh dari kebiasaan musim ini: '
-            f'{utama["label"].lower()} {utama["nilai_teks"]}, '
-            f'{utama["simpangan_teks"]} ({utama["pembanding"]}).'
+            f'{utama["label"].lower()} {utama["nilai_teks"]} — '
+            f'{utama["simpangan_kata"]}, {utama["pembanding"]} '
+            f'({utama["sd_teks"]} standard deviation).'
         )
         if len(urut) > 1:
             lain = urut[1]
