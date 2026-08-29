@@ -68,6 +68,29 @@ PENOLAK = re.compile(
     re.I,
 )
 
+# Judul yang berbicara tentang SEKELOMPOK pemain, bukan satu orang.
+#
+# Aturan "tepat satu nama MU" saja ternyata tidak cukup, dan ini contoh
+# nyatanya dari produksi:
+#
+#     "Five Man Utd stars to miss Ipswich clash as Michael Carrick must deal
+#      with early 'doubt' over Mason Mount"
+#
+# Cuma SATU nama MU yang tertulis, jadi aturan nama lolos. Pola "to miss"
+# menyala. Hasilnya: Mason Mount ditulis ABSEN — padahal judul yang sama
+# menyebut dia 'doubt', dan "to miss" itu milik lima pemain lain yang tidak
+# disebut namanya. Dua kesalahan sekaligus dari satu judul.
+#
+# Jadi begitu judulnya menghitung orang ("five stars", "two players"), atau
+# memakai kata jamak untuk pemain sama sekali, klaimnya bukan tentang satu
+# orang dan tidak boleh dipakai.
+PENOLAK_JAMAK = re.compile(
+    r'\b(?:two|three|four|five|six|seven|eight|nine|ten|\d+)\b[^.]{0,30}?'
+    r'\b(?:stars?|players?|aces?|men|names?|duo|trio)\b'
+    r'|\b(?:stars|players|aces|duo|trio)\b',
+    re.I,
+)
+
 # Berita lebih tua dari ini tidak lagi dianggap menggambarkan keadaan
 # sekarang. Status cedera bergerak cepat; judul dua minggu lalu bukan kabar,
 # itu arsip.
@@ -108,7 +131,7 @@ def cocok_nama(judul, player):
 
 def baca_status(judul):
     """Status yang diklaim judul, atau None kalau judulnya tidak mengklaim apa-apa."""
-    if not judul or PENOLAK.search(judul):
+    if not judul or PENOLAK.search(judul) or PENOLAK_JAMAK.search(judul):
         return None
     for status, pola in POLA:
         if pola.search(judul):

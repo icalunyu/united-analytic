@@ -346,7 +346,36 @@ class JudulRangkumanTests(TestCase):
         self.assertEqual(len(hasil), 1)
         self.assertEqual(hasil[0][1], PlayerAvailability.Status.OUT)
 
-    def test_lima_bintang_to_miss_tetap_ditolak(self):
-        """Pola longgar + nol nama = tetap diam."""
-        self._berita('Five Man Utd stars to miss Ipswich clash')
+    def test_judul_rangkuman_asli_produksi_ditolak(self):
+        """Judul UTUH dari feed, bukan versi pendek karangan sendiri.
+
+        Versi pertama tes ini memakai potongan judul yang kebetulan tidak
+        memuat nama pemain, jadi dia lulus karena alasan yang salah. Judul
+        aslinya menyebut Mason Mount, lolos aturan satu-nama, dan menulis
+        ABSEN untuk pemain yang judul itu sendiri sebut 'doubt' — sementara
+        "to miss" sebenarnya milik lima pemain lain yang tidak disebut nama.
+        """
+        self._berita(
+            'Five Man Utd stars to miss Ipswich clash as Michael Carrick must '
+            "deal with early 'doubt' over Mason Mount"
+        )
         self.assertEqual(self._jalankan(), [])
+
+    def test_judul_menghitung_pemain_ditolak(self):
+        for judul in (
+            'Manchester United issue injury update on two players with one to return',
+            'Three Man Utd aces ruled out of Ipswich clash',
+            'Man Utd stars sidelined ahead of Ipswich',
+        ):
+            NewsItem.objects.all().delete()
+            self._berita(judul)
+            self.assertEqual(self._jalankan(), [], judul)
+
+    def test_angka_bukan_orang_tidak_menolak(self):
+        """'ruled out for three weeks' — 'three' di situ satuan waktu."""
+        from players.models import PlayerAvailability
+
+        self._berita('Mason Mount ruled out for three weeks')
+        hasil = self._jalankan()
+        self.assertEqual(len(hasil), 1)
+        self.assertEqual(hasil[0][1], PlayerAvailability.Status.OUT)
