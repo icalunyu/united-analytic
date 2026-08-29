@@ -1,0 +1,307 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Pasca laga — MU Analytics{% endblock %}
+
+{% block content %}
+<div class="mb-5 flex flex-wrap items-baseline gap-2">
+  <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Pasca laga</h1>
+  <span class="font-mono text-[11px] text-gray-500">bahan konten setelah laga selesai</span>
+</div>
+
+{% if not match %}
+  <p class="card p-6 text-sm text-gray-500">
+    Belum ada laga berstatus selesai. Halaman ini hidup begitu ada satu laga final
+    yang datanya sudah ditarik.
+  </p>
+{% else %}
+
+{# ---------------------------------------------------------------- PS-01 #}
+<div class="card mb-5 p-3">
+  <div class="mb-2 flex items-baseline gap-2">
+    <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Pemilih laga</h2>
+    <span class="font-mono text-[10px] text-gray-600">PS-01</span>
+  </div>
+  <div class="flex flex-wrap gap-1.5">
+    {% for c in daftar %}
+    <a href="?laga={{ c.match.pk }}"
+       class="rounded border px-2.5 py-1.5 text-[11px] transition-colors
+              {% if c.match.pk == match.pk %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-text-strong)]{% else %}border-[var(--color-border)] text-gray-400 hover:border-[var(--color-mu)]/50 hover:text-white{% endif %}">
+      <span class="font-mono">{{ c.teks }}</span>
+      <span class="ml-1 text-gray-600">{{ c.match.kickoff_at|date:"j M" }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(520px,1fr)_380px]">
+  <div class="flex flex-col gap-5">
+
+    {# ------------------------------------------------ Laporan Pertandingan #}
+    <div class="card p-5">
+      <div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-[var(--color-border)] pb-3">
+        <span class="text-sm font-medium text-[var(--color-text-strong)]">{{ laporan.identitas.judul }}</span>
+        <span class="font-mono text-lg font-bold text-[var(--color-mu)]">{{ laporan.identitas.skor }}</span>
+        <span class="text-[11px] text-gray-500">
+          {{ laporan.identitas.kompetisi }}{% if laporan.identitas.venue %} · {{ laporan.identitas.venue }}{% endif %}
+          · {{ laporan.identitas.tanggal|date:"j M Y" }}
+        </span>
+      </div>
+
+      <h3 class="mb-3 text-2xl leading-tight font-bold text-[var(--color-text-strong)]">{{ laporan.judul }}</h3>
+      {% for p in laporan.paragraf %}
+      <p class="mb-2 text-sm leading-relaxed text-gray-400">{{ p }}</p>
+      {% empty %}
+      <p class="text-sm text-gray-500">Data laga ini belum cukup untuk menyusun laporan.</p>
+      {% endfor %}
+
+      {% if not laporan.lengkap %}
+      <p class="mt-2 text-[11px] leading-snug text-amber-400">
+        Sebagian bahan laporan belum ada — statistik tim atau nilai pemain laga ini
+        masih kosong, jadi paragrafnya lebih pendek daripada seharusnya.
+      </p>
+      {% endif %}
+
+      <div class="mt-4 flex gap-2">
+        <textarea id="teks-laporan" class="hidden">{{ laporan_teks }}</textarea>
+        <button type="button" data-salin="teks-laporan"
+                class="rounded bg-[var(--color-mu)] px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-[#F2495C]">
+          Salin laporan
+        </button>
+        <a href="?laga={{ match.pk }}&varian={{ varian_berikut }}"
+           class="rounded border border-[var(--color-border)] px-3 py-1.5 text-[11px] text-gray-400 transition-colors hover:text-white">
+          Susun ulang
+        </a>
+      </div>
+      <p class="mt-2 text-[10px] leading-snug text-gray-600">
+        Susun ulang cuma mengganti susunan kalimatnya. Angkanya tidak pernah berubah —
+        kalau bisa berubah, salah satu versinya bohong.
+      </p>
+    </div>
+
+    {# ---------------------------------------------------------- PS-02 #}
+    <div class="card p-5">
+      <div class="mb-1 flex items-baseline gap-2">
+        <h2 class="text-sm font-semibold text-[var(--color-text-strong)]">Angka Penentu</h2>
+        <span class="font-mono text-[11px] text-gray-500">PS-02</span>
+      </div>
+      <p class="mb-3 text-[11px] leading-relaxed text-gray-500">
+        Bukan empat angka yang selalu sama. Yang tampil adalah empat metrik yang paling
+        jauh dari kebiasaan United musim ini, diukur dalam simpangan baku.
+      </p>
+      {% if angka %}
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {% for a in angka %}
+        <div class="rounded border-l-2 bg-white/[0.02] py-2.5 pr-3 pl-3
+                    {% if a.arah == 'untung' %}border-emerald-500{% elif a.arah == 'rugi' %}border-red-500{% else %}border-gray-700{% endif %}">
+          <div class="font-mono text-2xl leading-none font-bold text-[var(--color-text-strong)]">{{ a.nilai_teks }}</div>
+          <div class="mt-1 text-[11px] text-gray-400">{{ a.label }}</div>
+          <div class="mt-0.5 font-mono text-[10px] text-gray-600">{{ a.pembanding }} · {{ a.simpangan_teks }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-[11px] leading-relaxed text-amber-400">
+        Belum bisa dihitung. Kartu ini butuh minimal {{ min_sampel }} laga bermusim sama
+        sebagai pembanding — di bawah itu, satu laga aneh menggeser rata-ratanya sendiri
+        dan semua angka jadi kelihatan normal.
+      </p>
+      {% endif %}
+    </div>
+
+    {# ---------------------------------------------------------- PS-03 #}
+    <div class="card p-5">
+      <div class="mb-1 flex items-baseline gap-2">
+        <h2 class="text-sm font-semibold text-[var(--color-text-strong)]">Nilai Pemain</h2>
+        <span class="font-mono text-[11px] text-gray-500">PS-03</span>
+      </div>
+      <p class="mb-3 text-[11px] leading-relaxed text-gray-500">
+        Dihitung dari event laga, bukan disalin dari penyedia data. Dasar 6,0, lalu
+        ditambah-kurang per aksi dengan bobot yang berbeda per posisi. Pemain di bawah
+        {{ menit_sampel_kecil }} menit ditandai sampel kecil dan tidak ikut jadi
+        tertinggi/terendah.
+      </p>
+      <div class="flex flex-col divide-y divide-[var(--color-border)]/60">
+        {% for r in nilai_pemain %}
+        <div class="flex items-center gap-3 py-1.5">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-baseline gap-2">
+              <span class="truncate text-sm text-[var(--color-text-strong)]">{{ r.player.name }}</span>
+              <span class="font-mono text-[10px] uppercase text-gray-600">{{ r.position|default:"—" }}</span>
+              {% if r.tertinggi %}<span class="font-mono text-[9px] uppercase text-emerald-400">tertinggi</span>{% endif %}
+              {% if r.terendah %}<span class="font-mono text-[9px] uppercase text-red-400">terendah</span>{% endif %}
+              {% if r.sampel_kecil and r.bermain %}<span class="font-mono text-[9px] uppercase text-gray-600">sampel kecil</span>{% endif %}
+            </div>
+            <div class="truncate text-[10px] text-gray-600">
+              {{ r.menit }}' {% if r.kontribusi %}· {{ r.kontribusi|join:" · " }}{% endif %}
+            </div>
+          </div>
+          {% if r.nilai %}
+          <div class="h-1.5 w-24 shrink-0 rounded-full bg-white/5">
+            <div class="h-full rounded-full {% if r.nilai >= 7.5 %}bg-emerald-500{% elif r.nilai >= 6.5 %}bg-white/40{% else %}bg-amber-400{% endif %}"
+                 style="width: {% widthratio r.nilai 10 100 %}%"></div>
+          </div>
+          <div class="w-10 shrink-0 text-right font-mono text-sm text-[var(--color-text-strong)]"
+               {% if r.dibatasi %}title="Hitungan mentahnya {{ r.mentah }} — dipotong di langit-langit skala"{% endif %}>{% if r.dibatasi %}<span class="text-gray-600">≥</span>{% endif %}{{ r.teks }}</div>
+          {% elif not r.bermain %}
+          <div class="shrink-0 text-right font-mono text-[10px] text-gray-700">tidak turun</div>
+          {% else %}
+          <div class="shrink-0 text-right font-mono text-[10px] text-gray-600">data event tidak cukup</div>
+          {% endif %}
+        </div>
+        {% empty %}
+        <p class="py-2 text-[11px] text-gray-500">Belum ada statistik pemain untuk laga ini.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# ---------------------------------------------------------- PS-04 #}
+    <div class="card p-5">
+      <div class="mb-1 flex items-baseline gap-2">
+        <h2 class="text-sm font-semibold text-[var(--color-text-strong)]">Saved Moments</h2>
+        <span class="font-mono text-[11px] text-gray-500">PS-04</span>
+        <span class="ml-auto font-mono text-[11px] text-gray-500">{{ jumlah_terpilih }} tercentang</span>
+      </div>
+      <p class="mb-3 text-[11px] leading-relaxed text-gray-500">
+        Yang tercentang di sini yang masuk ke prompt di sebelah kanan. Temuan sistem
+        masuk <em>tidak</em> tercentang — analis yang memutuskan apa yang layak jadi konten.
+      </p>
+
+      <div class="mb-3 flex flex-col divide-y divide-[var(--color-border)]/60">
+        {% for m in momen %}
+        <div class="flex items-start gap-2 py-1.5">
+          <form method="post" action="{% url 'dashboard:moment_toggle' m.pk %}" class="shrink-0 pt-0.5">
+            {% csrf_token %}
+            <input type="hidden" name="laga" value="{{ match.pk }}">
+            <button type="submit" title="Centang / lepas centang"
+                    class="flex h-4 w-4 items-center justify-center rounded-sm border text-[10px] leading-none
+                           {% if m.selected %}border-[var(--color-mu)] bg-[var(--color-mu)] text-white{% else %}border-white/20 text-transparent{% endif %}">✓</button>
+          </form>
+          <div class="min-w-0 flex-1">
+            <div class="text-[12px] leading-snug text-gray-300">
+              {% if m.minute is not None %}<span class="font-mono text-[var(--color-mu)]">{{ m.minute }}'</span> {% endif %}
+              {{ m.text }}
+            </div>
+            <div class="mt-0.5 flex flex-wrap gap-x-2 font-mono text-[9px] uppercase text-gray-600">
+              <span class="{% if m.origin == 'analis' %}text-amber-400{% endif %}">{{ m.get_origin_display }}</span>
+              {% if m.origin_card %}<span>{{ m.origin_card }}</span>{% endif %}
+              {% if m.figure %}<span class="text-gray-500">{{ m.figure }}</span>{% endif %}
+            </div>
+          </div>
+          <form method="post" action="{% url 'dashboard:moment_delete' m.pk %}" class="shrink-0">
+            {% csrf_token %}
+            <input type="hidden" name="laga" value="{{ match.pk }}">
+            <button type="submit" class="text-[10px] text-gray-700 transition-colors hover:text-red-400">hapus</button>
+          </form>
+        </div>
+        {% empty %}
+        <p class="py-2 text-[11px] text-gray-500">
+          Belum ada momen. Detektor tidak menemukan apa pun yang melewati ambangnya di
+          laga ini, dan belum ada yang ditambahkan manual.
+        </p>
+        {% endfor %}
+      </div>
+
+      <form method="post" action="{% url 'dashboard:moment_add' match.pk %}"
+            class="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+        {% csrf_token %}
+        <input type="hidden" name="laga" value="{{ match.pk }}">
+        <input type="number" name="menit" min="0" max="130" placeholder="menit"
+               class="w-16 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 font-mono text-[11px] text-gray-300">
+        <input type="text" name="teks" required placeholder="Kalimat momen — tulis angkanya apa adanya"
+               class="min-w-0 flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] text-gray-300">
+        <input type="text" name="angka" placeholder="angka"
+               class="w-24 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 font-mono text-[11px] text-gray-300">
+        <button type="submit"
+                class="rounded border border-[var(--color-border)] px-3 py-1 text-[11px] text-gray-400 transition-colors hover:text-white">
+          Tambah
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# ---------------------------------------------------------- PS-05 #}
+  <div class="flex flex-col gap-5">
+    <div class="card p-4">
+      <div class="mb-1 flex items-baseline gap-2">
+        <h2 class="text-sm font-semibold text-[var(--color-text-strong)]">Generator Prompt</h2>
+        <span class="font-mono text-[11px] text-gray-500">PS-05</span>
+      </div>
+      <p class="mb-3 text-[11px] leading-relaxed text-gray-500">
+        App ini tidak membuat gambar. Yang dibuat adalah prompt siap tempel ke alat AI
+        mana pun, di mana teks dan angkanya berasal dari data kita — jadi yang dikerjakan
+        alat luar cuma visualnya.
+      </p>
+
+      <div class="mb-2">
+        <div class="mb-1 font-mono text-[10px] uppercase tracking-wide text-gray-600">Sumber</div>
+        <div class="flex flex-wrap gap-1">
+          {% for kode, label in sumber_pilihan %}
+          <a href="?laga={{ match.pk }}&tipe={{ tipe }}&nada={{ nada }}&sumber={{ kode }}"
+             class="rounded border px-2 py-1 text-[10px] transition-colors
+                    {% if kode == sumber %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-text-strong)]{% else %}border-[var(--color-border)] text-gray-500 hover:text-white{% endif %}">{{ label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <div class="mb-1 font-mono text-[10px] uppercase tracking-wide text-gray-600">Tipe konten</div>
+        <div class="flex flex-wrap gap-1">
+          {% for kode, label in tipe_pilihan %}
+          <a href="?laga={{ match.pk }}&sumber={{ sumber }}&nada={{ nada }}&tipe={{ kode }}"
+             class="rounded border px-2 py-1 text-[10px] transition-colors
+                    {% if kode == tipe %}border-[var(--color-mu)] bg-[var(--color-mu)]/15 text-[var(--color-text-strong)]{% else %}border-[var(--color-border)] text-gray-500 hover:text-white{% endif %}">{{ label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+
+      <pre id="teks-prompt" class="max-h-[430px] overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-[10.5px] leading-snug whitespace-pre-wrap text-gray-400">{{ prompt }}</pre>
+
+      <button type="button" data-salin="teks-prompt"
+              class="mt-2 w-full rounded bg-[var(--color-mu)] px-3 py-2 text-[11px] font-medium text-white transition-colors hover:bg-[#F2495C]">
+        Salin prompt
+      </button>
+    </div>
+
+    <div class="card p-4">
+      <div class="mb-2 flex items-baseline gap-2">
+        <h2 class="text-sm font-semibold text-[var(--color-text-strong)]">Draf caption</h2>
+        <div class="ml-auto flex gap-1">
+          {% for kode, label in nada_pilihan %}
+          <a href="?laga={{ match.pk }}&tipe={{ tipe }}&sumber={{ sumber }}&nada={{ kode }}"
+             class="rounded border px-2 py-0.5 text-[10px] transition-colors
+                    {% if kode == nada %}border-[var(--color-mu)] text-[var(--color-text-strong)]{% else %}border-[var(--color-border)] text-gray-500 hover:text-white{% endif %}">{{ label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <pre id="teks-caption" class="rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-3 text-[11px] leading-relaxed whitespace-pre-wrap text-gray-400">{{ caption }}</pre>
+      <button type="button" data-salin="teks-caption"
+              class="mt-2 w-full rounded border border-[var(--color-border)] px-3 py-1.5 text-[11px] text-gray-400 transition-colors hover:text-white">
+        Salin caption
+      </button>
+      <p class="mt-2 text-[10px] leading-snug text-gray-600">
+        Tanpa hashtag — itu keputusan tim socmed, bukan keputusan data.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Tombol salin. Tidak ada framework di app ini, jadi ditulis apa adanya.
+  document.querySelectorAll('[data-salin]').forEach(function (tombol) {
+    tombol.addEventListener('click', function () {
+      var sumber = document.getElementById(tombol.dataset.salin);
+      if (!sumber) return;
+      var teks = sumber.value !== undefined ? sumber.value : sumber.textContent;
+      var semula = tombol.textContent;
+      navigator.clipboard.writeText(teks).then(function () {
+        tombol.textContent = 'Tersalin';
+        setTimeout(function () { tombol.textContent = semula; }, 1500);
+      }).catch(function () {
+        tombol.textContent = 'Gagal menyalin';
+        setTimeout(function () { tombol.textContent = semula; }, 1500);
+      });
+    });
+  });
+</script>
+{% endif %}
+{% endblock %}

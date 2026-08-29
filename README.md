@@ -194,6 +194,21 @@ Server ini (DomaiNesia, `musafar.web.id`) udah pernah dipakai buat deploy app Dj
 
 ## Backup
 
+### Turunan ketersediaan dari berita
+
+`pull_news` cuma menarik judul. Yang mengubah judul jadi status pemain command
+terpisah, dan dia **nggak nyentuh jaringan** — jadi aman dijalanin sesering
+apa pun:
+
+```bash
+python manage.py derive_availability_news --dry-run   # lihat temuannya dulu
+python manage.py derive_availability_news
+```
+
+Taruh di cron **sesudah** `pull_news`, bukan sebelum. Hasilnya jadi sumber
+kedua di panel Konflik Sumber halaman Skuad — tanpa ini cuma FPL yang punya
+klaim, dan satu sumber nggak bisa berselisih sama siapa pun.
+
 `scripts/backup-db.sh` jalan tiap hari 03:30 WIB lewat cron: `pg_dump` →
 rotasi 3 salinan lokal di `backups/` → unggah ke Google Drive lewat `rclone`,
 lalu **verifikasi filenya benar-benar ada di sana** sebelum melapor sukses.

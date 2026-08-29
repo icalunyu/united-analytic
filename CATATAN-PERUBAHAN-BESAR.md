@@ -1316,3 +1316,130 @@ Yang menggantung:
 - **Baris ganda Tom Heaton** 2026-08-08 (dua `PlayerMatchStatistics`, satu
   `minutes_played=49`, satu `None`) — dugaan dedup laga meleset, belum
   diselidiki.
+
+## 24. Skuad direkonsiliasi & Tahap 4 lahir
+
+Tiga pekerjaan sekaligus: panel Konflik Sumber (SQ-01), Tabel Ketersediaan
+(SQ-02), dan seluruh halaman Pasca laga (PS-01…PS-05 + Laporan Pertandingan).
+Tes naik dari 244 ke 314.
+
+### Konflik butuh dua sumber, dan sebelumnya cuma ada satu
+
+Checklist sudah lama bilang SQ-01 "tidak terblokir lagi" karena FPL jadi
+sumber kedua. Waktu dibuka kodenya, ternyata **cuma FPL yang pernah menulis
+`PlayerAvailability`**. Satu sumber tidak bisa berselisih dengan siapa pun,
+jadi panelnya akan selalu kosong.
+
+Sumber kedua yang dibangun: `news/availability.py` — menurunkan status dari
+**judul** berita yang sudah kita tarik. Tidak menyentuh jaringan sama sekali.
+
+Batasnya sengaja ketat, dan alasannya ditulis di modulnya:
+
+- Judul itu sinyal lemah. "Bruno Fernandes injury latest" tidak mengklaim
+  apa pun, jadi polanya harus menolak lebih sering daripada menerima.
+- **Tidak pernah menaikkan status jadi bugar.** "Back in training" muncul jauh
+  lebih sering daripada pemainnya benar-benar siap. Salah ke arah "bugar"
+  bikin nama masuk prediksi susunan; salah ke arah "diragukan" cuma bikin dia
+  ditanyakan.
+- Nama depan tidak dipakai mencocokkan. 'Mason' terlalu sering menunjuk orang
+  lain, dan 'Mason Greenwood' bukan 'Mason Mount'.
+- Judul lebih tua dari 10 hari dibuang, dan turunan yang sudah kedaluwarsa
+  **dihapus** tiap run. Tanpa itu satu judul "ruled out" dari bulan lalu
+  menempel selamanya dan terus berselisih dengan FPL — konflik palsu yang
+  tidak pernah selesai karena tidak ada yang menyegarkannya.
+
+### Satu penyimpangan dari urutan prioritas di handoff
+
+Handoff: "pengumuman resmi klub, lalu sumber tingkat A, lalu agregator". Kita
+tidak punya API pengumuman klub — yang kita punya turunan kata kunci dari
+judul. Menaruhnya di puncak prioritas berarti satu judul salah baca bisa
+mengalahkan feed terstruktur, kebalikan dari maksud aturannya. Jadi **FPL di
+atas NEWS**, ditulis eksplisit di `players/availability.py` supaya kalau suatu
+hari ada umpan resmi manutd.com, dia masuk di atas FPL lewat perubahan yang
+kelihatan, bukan tukar diam-diam.
+
+### Keputusan analis menyimpan statusnya, bukan cuma sumbernya
+
+`AvailabilityDecision` menyalin status milik sumber **pada saat diputuskan**.
+Kalau cuma menyimpan "analis memilih FPL", lalu FPL diam-diam mengubah Amad
+dari 75% jadi absen, keputusan yang tercatat berubah artinya tanpa ada yang
+menyentuhnya. Dengan salinan itu, keputusannya tetap berarti apa yang
+dimaksud — dan halaman bisa memberi tahu kalau sumbernya sudah bergeser sejak
+itu, alih-alih diam.
+
+Tabelnya juga terpisah dan **tidak pernah ditulis balik** ke
+`PlayerAvailability`, jadi penarikan berikutnya tidak bisa menimpanya dan
+angka sumber tidak pernah tercemar tangan manusia.
+
+### Tiga bug yang ketemu dari membaca angkanya, bukan dari tes
+
+**1. Komentar template yang tercetak ke halaman.** Regex lexer Django
+dikompilasi tanpa `DOTALL`, jadi `{# ... #}` yang penutupnya di baris lain
+**tidak dikenali sebagai komentar** — isinya keluar apa adanya di halaman.
+Bug ini sudah hidup di `base.html` entah sejak kapan tanpa ketahuan, karena
+panelnya ada di bawah lipatan layar. Sekarang ada tes yang memindai seluruh
+template.
+
+**2. `chances_created` dan `key_passes` itu kolom yang sama.** Diperiksa di
+seluruh baris yang punya keduanya: **55 dari 55 identik**. Memberi bobot ke
+dua-duanya berarti menghitung satu umpan dua kali, dan yang paling diuntungkan
+gelandang kreatif — Bruno Fernandes menembus langit-langit nilai 10 gara-gara
+ini. Sekarang digabung jadi satu masukan (`chances_created` dipakai kalau ada,
+`key_passes` cadangan — 1.104 baris di produksi cuma punya yang kedua).
+
+**3. Cadangan yang tidak turun dinilai 6,0.** Baris statistik mereka berisi
+nol di mana-mana, dan nol yang diperlakukan sebagai data menghasilkan nilai
+dasar — angka yang **persis sama** dengan pemain yang main 90 menit tanpa
+menonjol. Sekarang nol menit tidak dinilai sama sekali, dan halaman
+menuliskannya "tidak turun", beda dari "data event tidak cukup".
+
+### Nilai yang menyentuh langit-langit tidak boleh diam-diam jadi seri
+
+Dua penampilan yang mentahnya 10,2 dan 12,8 sama-sama tampil "10,0". Kalau
+urutannya juga memakai angka yang sudah dipotong, yang menentukan siapa di
+atas jadi abjad namanya. Sekarang urutannya pakai skor mentah, dan nilai yang
+terpotong diberi tanda `≥` dengan mentahnya di tooltip.
+
+### PS-02 boleh menolak menjawab
+
+Angka Penentu butuh sebaran. Di bawah 6 laga bermusim sama, satu laga aneh
+menggeser rata-ratanya sendiri dan semua angka jadi kelihatan normal — jadi
+kartunya mengembalikan daftar kosong dan halaman bilang datanya belum cukup.
+
+Kolom yang **varians-nya nol** juga dilewati. Metrik sepak bola tidak pernah
+benar-benar konstan sepanjang musim; kolom seperti itu hampir pasti artefak
+(diisi nilai default), dan menampilkannya sebagai "paling menyimpang" akan
+menaruh artefak di puncak kartu.
+
+### Detektor momen masuk tanpa tercentang
+
+Temuan sistem disimpan `selected=False`. Kalau default-nya tercentang, prompt
+konten terisi sendiri oleh hal-hal yang belum dibaca siapa pun. Momen asal
+analis tidak pernah disentuh detektor — itu tulisan manusia.
+
+Detektornya jalan ulang tiap halaman Pasca dibuka. Menulis pada GET memang
+tidak lazim, tapi operasinya idempoten (ada `UniqueConstraint` bersyarat), dan
+alternatifnya bikin halaman menampilkan temuan basi untuk laga yang datanya
+baru saja lengkap.
+
+### Generator prompt: ATURAN TEKS sebelum datanya
+
+Urutan blok dari handoff dipertahankan persis, dan satu bagiannya bukan
+kosmetik: instruksi "jangan bulatkan angka" yang datang **setelah** angkanya
+dibaca jauh lebih sering diabaikan daripada yang datang sebelumnya. Ada tes
+yang menjaga urutan itu.
+
+### Utang yang lahir hari ini
+
+- Bobot nilai pemain **belum dikalibrasi** — handoff tidak memberi angka, cuma
+  daftar aksi. Perbandingan antar posisi sudah dijaga, besarannya belum.
+- Kolom "Perkiraan kembali" cuma diisi kalau sumbernya menyebut tanggal.
+  Desain minta median durasi pemulihan cedera sejenis; riwayat cedera kita
+  belum cukup, dan tebakan di kolom bertanda "perkiraan" lebih berbahaya
+  daripada kolom kosong.
+- Aturan 4 (susunan resmi menimpa semuanya) sudah ditulis dan bertes, tapi
+  **jarang menyala** — penarik kita baru mendapat susunan pada atau sesudah
+  kick-off, bukan satu jam sebelumnya.
+- `matches/scoreline.py` jadi helper terpusat "United selalu ditulis lebih
+  dulu", tapi baru dipakai halaman Pasca. Halaman lain masih punya logikanya
+  sendiri.

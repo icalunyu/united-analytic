@@ -555,3 +555,268 @@ class PraLagaTests(TestCase):
         Match.objects.all().delete()
         r = self._get()
         self.assertIsNone(r.context['match'])
+
+
+class HalamanSkuadTests(TestCase):
+    """SQ-01 & SQ-02 di lapisan halaman.
+
+    Yang dijaga: konflik yang belum diputuskan harus KELIHATAN sebagai
+    'Bentrok' dan ditandai jangan dipakai untuk konten. Status yang diam-diam
+    dipilihkan app justru kebalikan dari maksud kartu ini.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from players.models import DataSource, Player, PlayerAvailability
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        cls.amad = Player.objects.create(
+            name='Amad Diallo', team=cls.mu, position='WNG', is_active=True
+        )
+        cls.bruno = Player.objects.create(
+            name='Bruno Fernandes', team=cls.mu, position='CAM', is_active=True
+        )
+        PlayerAvailability.objects.create(
+            player=cls.amad, source=DataSource.FPL,
+            status=PlayerAvailability.Status.DOUBTFUL,
+            note='Foot injury - 75% chance of playing', chance_pct=75,
+            source_updated_at=timezone.now() - timedelta(hours=6),
+        )
+        PlayerAvailability.objects.create(
+            player=cls.amad, source=DataSource.NEWS,
+            status=PlayerAvailability.Status.OUT,
+            note='Sky Sports: Amad Diallo ruled out for three weeks',
+            source_updated_at=timezone.now() - timedelta(hours=2),
+        )
+        PlayerAvailability.objects.create(
+            player=cls.bruno, source=DataSource.FPL,
+            status=PlayerAvailability.Status.FIT,
+        )
+
+    def test_konflik_muncul_di_panel(self):
+        r = self.client.get(reverse('dashboard:squad'))
+        self.assertEqual(len(r.context['konflik']), 1)
+        self.assertEqual(r.context['konflik'][0]['player'].name, 'Amad Diallo')
+        self.assertContains(r, 'Konflik Sumber')
+        self.assertContains(r, '6 jam lalu')
+
+    def test_tiga_aturan_ditulis_di_ui(self):
+        """Permintaan eksplisit spesifikasi: aturannya di UI, bukan cuma dokumen."""
+        r = self.client.get(reverse('dashboard:squad'))
+        self.assertContains(r, 'jangan dipakai untuk konten')
+        self.assertContains(r, 'bukan data sumber')
+        self.assertContains(r, 'satu jam sebelum kick-off')
+
+    def test_belum_diputuskan_tertulis_bentrok(self):
+        r = self.client.get(reverse('dashboard:squad'))
+        baris = {b['player'].name: b for b in r.context['baris']}
+        self.assertEqual(baris['Amad Diallo']['label'], 'Bentrok')
+        self.assertFalse(baris['Amad Diallo']['aman_untuk_konten'])
+        self.assertEqual(baris['Bruno Fernandes']['label'], 'Bugar')
+
+    def test_analis_memutuskan_lalu_membatalkan(self):
+        from players.models import AvailabilityDecision, DataSource
+
+        r = self.client.post(
+            reverse('dashboard:availability_decide', args=[self.amad.pk]),
+            {'sumber': DataSource.FPL, 'catatan': 'Ikut latihan penuh'},
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(AvailabilityDecision.objects.filter(player=self.amad).exists())
+
+        r = self.client.get(reverse('dashboard:squad'))
+        baris = {b['player'].name: b for b in r.context['baris']}
+        self.assertEqual(baris['Amad Diallo']['label'], 'Diragukan')
+        self.assertEqual(baris['Amad Diallo']['hasil']['asal'], 'analis')
+        self.assertEqual(len(r.context['konflik']), 0)
+
+        self.client.post(reverse('dashboard:availability_reset', args=[self.amad.pk]))
+        r = self.client.get(reverse('dashboard:squad'))
+        self.assertEqual(len(r.context['konflik']), 1)
+
+    def test_sumber_tanpa_status_ditolak(self):
+        from players.models import DataSource
+
+        r = self.client.post(
+            reverse('dashboard:availability_decide', args=[self.amad.pk]),
+            {'sumber': DataSource.HIGHLIGHTLY},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_header_menyebut_jumlah_sumber(self):
+        r = self.client.get(reverse('dashboard:squad'))
+        self.assertEqual(len(r.context['sumber_terpakai']), 2)
+        self.assertContains(r, 'sumber direkonsiliasi')
+
+
+class HalamanPascaTests(TestCase):
+    """Tahap 4 — kriteria selesai handoff: laporan satu laga lama bisa
+    dihasilkan tanpa campur tangan manual."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from matches.models import MatchEvent, MatchTeamStatistics, PlayerMatchStatistics
+        from players.models import Player
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        cls.lawan = Team.objects.create(name='Ipswich Town', short_name='Ipswich')
+
+        # Delapan laga riwayat supaya PS-02 punya sebaran.
+        for i in range(8):
+            m = Match.objects.create(
+                home_team=cls.mu, away_team=cls.lawan,
+                kickoff_at=timezone.now() - timedelta(days=10 + i),
+                season=2026, status=Match.Status.FINISHED, home_score=1, away_score=1,
+            )
+            MatchTeamStatistics.objects.create(
+                match=m, team=cls.mu, shots_total=8 + (i % 5), possession_pct=52 + (i % 4)
+            )
+            MatchTeamStatistics.objects.create(match=m, team=cls.lawan, shots_total=9 + (i % 3))
+
+        cls.match = Match.objects.create(
+            home_team=cls.mu, away_team=cls.lawan,
+            kickoff_at=timezone.now() - timedelta(days=1),
+            season=2026, status=Match.Status.FINISHED, home_score=3, away_score=0,
+            league_name='Premier League', venue='Old Trafford',
+        )
+        MatchTeamStatistics.objects.create(
+            match=cls.match, team=cls.mu, shots_total=28, possession_pct=61, xg=3.2
+        )
+        MatchTeamStatistics.objects.create(match=cls.match, team=cls.lawan, shots_total=3)
+
+        cls.bruno = Player.objects.create(name='Bruno Fernandes', team=cls.mu, position='CAM')
+        PlayerMatchStatistics.objects.create(
+            match=cls.match, player=cls.bruno, team=cls.mu, minutes_played=90,
+            starter=True, goals=2, assists=1, key_passes=4, duels_won=6, duels_lost=2,
+        )
+        MatchEvent.objects.create(
+            match=cls.match, team=cls.mu, player=cls.bruno,
+            event_type=MatchEvent.EventType.GOAL, minute=23,
+        )
+
+    def test_halaman_hidup_dan_default_ke_laga_terbaru(self):
+        r = self.client.get(reverse('dashboard:post_match'))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context['match'].pk, self.match.pk)
+        self.assertContains(r, 'Pasca laga')
+
+    def test_laporan_tersusun_tanpa_campur_tangan(self):
+        r = self.client.get(reverse('dashboard:post_match'))
+        laporan = r.context['laporan']
+        self.assertTrue(laporan['paragraf'])
+        self.assertIn('3–0', ' '.join(laporan['paragraf']))
+        self.assertIn('Bruno Fernandes', ' '.join(laporan['paragraf']))
+
+    def test_susun_ulang_mengubah_kalimat_bukan_angka(self):
+        a = self.client.get(reverse('dashboard:post_match'), {'varian': 0})
+        b = self.client.get(reverse('dashboard:post_match'), {'varian': 1})
+        self.assertNotEqual(a.context['laporan']['judul'], b.context['laporan']['judul'])
+        for r in (a, b):
+            self.assertIn('3–0', ' '.join(r.context['laporan']['paragraf']))
+
+    def test_angka_penentu_dan_nilai_pemain_terisi(self):
+        r = self.client.get(reverse('dashboard:post_match'))
+        self.assertTrue(r.context['angka'])
+        self.assertLessEqual(len(r.context['angka']), 4)
+        nilai = r.context['nilai_pemain']
+        self.assertEqual(nilai[0]['player'].name, 'Bruno Fernandes')
+        self.assertIsNotNone(nilai[0]['nilai'])
+
+    def test_detektor_mengisi_saved_moments(self):
+        from matches.models import SavedMoment
+
+        self.client.get(reverse('dashboard:post_match'))
+        momen = SavedMoment.objects.filter(match=self.match)
+        self.assertTrue(momen.exists())
+        self.assertTrue(all(m.origin == SavedMoment.Asal.SISTEM for m in momen))
+        # Belum tercentang, jadi belum masuk prompt.
+        self.assertFalse(any(m.selected for m in momen))
+
+    def test_membuka_halaman_berkali_kali_tidak_menggandakan_momen(self):
+        from matches.models import SavedMoment
+
+        for _ in range(3):
+            self.client.get(reverse('dashboard:post_match'))
+        jumlah = SavedMoment.objects.filter(match=self.match).count()
+        self.assertEqual(
+            jumlah, SavedMoment.objects.filter(match=self.match).values('text').distinct().count()
+        )
+
+    def test_centang_momen_memasukkannya_ke_prompt(self):
+        from matches.models import SavedMoment
+
+        self.client.get(reverse('dashboard:post_match'))
+        m = SavedMoment.objects.filter(match=self.match).first()
+        self.client.post(reverse('dashboard:moment_toggle', args=[m.pk]))
+
+        r = self.client.get(reverse('dashboard:post_match'), {'laga': self.match.pk})
+        self.assertIn(m.text, r.context['prompt'])
+        self.assertEqual(r.context['jumlah_terpilih'], 1)
+
+    def test_analis_menambah_dan_menghapus_momen(self):
+        from matches.models import SavedMoment
+
+        self.client.post(
+            reverse('dashboard:moment_add', args=[self.match.pk]),
+            {'menit': 61, 'teks': 'Bentuk berubah jadi 4-2-2-2', 'angka': '61 menit'},
+        )
+        m = SavedMoment.objects.get(match=self.match, origin=SavedMoment.Asal.ANALIS)
+        self.assertTrue(m.selected)
+
+        r = self.client.get(reverse('dashboard:post_match'), {'laga': self.match.pk})
+        self.assertIn('Bentuk berubah jadi 4-2-2-2', r.context['prompt'])
+
+        self.client.post(reverse('dashboard:moment_delete', args=[m.pk]))
+        self.assertFalse(SavedMoment.objects.filter(pk=m.pk).exists())
+
+    def test_momen_tanpa_teks_ditolak(self):
+        r = self.client.post(
+            reverse('dashboard:moment_add', args=[self.match.pk]), {'teks': '   '}
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_tipe_konten_diganti_lewat_url(self):
+        r = self.client.get(reverse('dashboard:post_match'), {'tipe': 'thread'})
+        self.assertEqual(r.context['tipe'], 'thread')
+        self.assertIn('thread di X', r.context['prompt'])
+
+    def test_tipe_konten_ngawur_jatuh_ke_bawaan(self):
+        r = self.client.get(reverse('dashboard:post_match'), {'tipe': '../../etc/passwd'})
+        self.assertEqual(r.context['tipe'], 'carousel')
+
+    def test_laga_lama_di_luar_chip_tetap_bisa_dibuka(self):
+        lama = Match.objects.filter(status=Match.Status.FINISHED).order_by('kickoff_at').first()
+        r = self.client.get(reverse('dashboard:post_match'), {'laga': lama.pk})
+        self.assertEqual(r.context['match'].pk, lama.pk)
+
+    def test_halaman_tetap_hidup_tanpa_laga_selesai(self):
+        Match.objects.all().delete()
+        r = self.client.get(reverse('dashboard:post_match'))
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(r.context['match'])
+
+
+class KomentarTemplateTests(TestCase):
+    """Komentar `{# ... #}` tidak boleh melewati baris.
+
+    Regex lexer Django dikompilasi tanpa DOTALL, jadi `{#` yang penutupnya ada
+    di baris lain tidak pernah dikenali sebagai komentar — isinya tercetak apa
+    adanya ke halaman. Bug ini sempat hidup di `base.html` tanpa ketahuan
+    karena panelnya ada di bawah lipatan layar.
+    """
+
+    def test_tidak_ada_komentar_lintas_baris(self):
+        import pathlib
+        import re
+
+        akar = pathlib.Path(__file__).resolve().parent / 'templates'
+        salah = []
+        for berkas in akar.rglob('*.html'):
+            isi = berkas.read_text()
+            for m in re.finditer(r'\{#.*?#\}', isi, re.S):
+                if '\n' in m.group(0):
+                    baris = isi[: m.start()].count('\n') + 1
+                    salah.append(f'{berkas.name}:{baris}')
+        self.assertEqual(
+            salah, [], f'Pakai {{% comment %}} untuk komentar lintas baris: {salah}'
+        )

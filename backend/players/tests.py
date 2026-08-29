@@ -585,3 +585,146 @@ class LagaGandaMergeTests(TestCase):
         )
         self._gabung()
         self.assertEqual(Match.objects.count(), 2)
+
+
+class KetersediaanTests(TestCase):
+    """SQ-01 & SQ-02 — rekonsiliasi status antar sumber.
+
+    Yang dijaga di sini bukan "panelnya tampil", tapi empat aturan yang kalau
+    salah bikin app menebak diam-diam di tempat yang justru dirancang supaya
+    tidak menebak.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from players.models import Player, Team
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        cls.amad = Player.objects.create(
+            name='Amad Diallo', team=cls.mu, position='WNG', is_active=True
+        )
+        cls.bruno = Player.objects.create(
+            name='Bruno Fernandes', team=cls.mu, position='CAM', is_active=True
+        )
+
+    def _entri(self, player, source, status, **extra):
+        from players.models import PlayerAvailability
+
+        return PlayerAvailability.objects.create(
+            player=player, source=source, status=status, **extra
+        )
+
+    def test_status_beda_antar_sumber_jadi_bentrok(self):
+        from players import availability
+        from players.models import DataSource, PlayerAvailability
+
+        self._entri(self.amad, DataSource.FPL, PlayerAvailability.Status.DOUBTFUL)
+        self._entri(self.amad, DataSource.NEWS, PlayerAvailability.Status.OUT)
+
+        hasil = availability.putuskan(list(self.amad.availability.all()))
+        self.assertEqual(hasil['asal'], 'bentrok')
+        self.assertIsNone(hasil['status'])
+        self.assertEqual(availability.pill(hasil)[0], 'Bentrok')
+
+    def test_tidak_dicakup_bukan_konflik(self):
+        """'Sumbernya nggak tahu' beda dari 'sumbernya bilang lain'.
+
+        Kalau UNKNOWN ikut dibandingkan, hampir seluruh skuad jadi bentrok
+        tiap malam dan panelnya berubah jadi kebisingan yang diabaikan.
+        """
+        from players import availability
+        from players.models import DataSource, PlayerAvailability
+
+        self._entri(self.bruno, DataSource.FPL, PlayerAvailability.Status.FIT)
+        self._entri(self.bruno, DataSource.NEWS, PlayerAvailability.Status.UNKNOWN)
+
+        hasil = availability.putuskan(list(self.bruno.availability.all()))
+        self.assertEqual(hasil['asal'], 'sumber')
+        self.assertEqual(hasil['status'], PlayerAvailability.Status.FIT)
+
+    def test_pilihan_analis_menimpa_kedua_sumber(self):
+        from players import availability
+        from players.models import AvailabilityDecision, DataSource, PlayerAvailability
+
+        self._entri(self.amad, DataSource.FPL, PlayerAvailability.Status.DOUBTFUL)
+        self._entri(self.amad, DataSource.NEWS, PlayerAvailability.Status.OUT)
+        keputusan = AvailabilityDecision.objects.create(
+            player=self.amad,
+            source=DataSource.FPL,
+            status=PlayerAvailability.Status.DOUBTFUL,
+            note='Latihan penuh kemarin',
+        )
+
+        hasil = availability.putuskan(list(self.amad.availability.all()), keputusan=keputusan)
+        self.assertEqual(hasil['asal'], 'analis')
+        self.assertEqual(hasil['status'], PlayerAvailability.Status.DOUBTFUL)
+
+    def test_sumber_berubah_sesudah_keputusan_diberi_tahu(self):
+        """Keputusan tetap dipakai, tapi pergeserannya harus disebut.
+
+        Diam soal ini bikin analis mengira dia masih melihat data terbaru,
+        padahal keputusannya diambil atas dasar angka yang sudah berubah.
+        """
+        from players import availability
+        from players.models import AvailabilityDecision, DataSource, PlayerAvailability
+
+        self._entri(self.amad, DataSource.FPL, PlayerAvailability.Status.OUT)
+        self._entri(self.amad, DataSource.NEWS, PlayerAvailability.Status.DOUBTFUL)
+        keputusan = AvailabilityDecision.objects.create(
+            player=self.amad,
+            source=DataSource.FPL,
+            status=PlayerAvailability.Status.DOUBTFUL,
+        )
+
+        hasil = availability.putuskan(list(self.amad.availability.all()), keputusan=keputusan)
+        self.assertEqual(hasil['status'], PlayerAvailability.Status.DOUBTFUL)
+        self.assertIn('sudah berubah', hasil['catatan'])
+
+    def test_susunan_resmi_menimpa_semuanya(self):
+        from players import availability
+        from players.models import AvailabilityDecision, DataSource, PlayerAvailability
+
+        self._entri(self.amad, DataSource.FPL, PlayerAvailability.Status.OUT)
+        keputusan = AvailabilityDecision.objects.create(
+            player=self.amad,
+            source=DataSource.FPL,
+            status=PlayerAvailability.Status.OUT,
+        )
+        hasil = availability.putuskan(
+            list(self.amad.availability.all()),
+            keputusan=keputusan,
+            lewat_susunan_resmi=True,
+        )
+        self.assertEqual(hasil['asal'], 'susunan')
+        self.assertEqual(hasil['status'], PlayerAvailability.Status.FIT)
+
+    def test_prioritas_fpl_di_atas_news(self):
+        """Turunan-kata-kunci tidak boleh mengalahkan feed terstruktur.
+
+        Dua sumber di sini SEPAKAT statusnya, jadi bukan konflik — yang diuji
+        adalah sumber mana yang tercatat sebagai asal angkanya.
+        """
+        from players import availability
+        from players.models import DataSource, PlayerAvailability
+
+        self._entri(self.bruno, DataSource.NEWS, PlayerAvailability.Status.OUT)
+        self._entri(self.bruno, DataSource.FPL, PlayerAvailability.Status.OUT)
+
+        hasil = availability.putuskan(list(self.bruno.availability.all()))
+        self.assertEqual(hasil['sumber'], DataSource.FPL)
+
+    def test_umur_data_kosong_bukan_baru(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from players import availability
+
+        sekarang = timezone.now()
+        self.assertIsNone(availability.umur_teks(None, sekarang))
+        self.assertEqual(
+            availability.umur_teks(sekarang - timedelta(hours=3), sekarang), '3 jam lalu'
+        )
+        self.assertEqual(
+            availability.umur_teks(sekarang - timedelta(days=4), sekarang), '4 hari lalu'
+        )

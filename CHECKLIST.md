@@ -2,7 +2,7 @@
 
 Status tiap butir design handoff terhadap kode yang benar-benar ada.
 Diaudit **24 Agustus 2026** dengan membaca file, bukan menebak dari nama.
-Diperbarui sesudah halaman Pra-laga, penyambungan provenance, dan LV-08.
+Diperbarui **29 Agustus 2026** sesudah SQ-01, SQ-02, dan seluruh Tahap 4.
 
 Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **🚫 terblokir**
 
@@ -15,16 +15,20 @@ Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **�
 
 | Tahap | ✅ | 🟡 | ⬜ | 🚫 | Keadaan |
 |---|--:|--:|--:|--:|---|
-| 0 — Fondasi data | 8 | 7 | 3 | 0 | **NewsItem & PlayerAvailability** akhirnya ada |
-| 1 — Penarikan & rekonsiliasi | 7 | 4 | 1 | 1 | **Chip sumber & Kesehatan Sumber akhirnya tampil** |
-| 2 — Halaman rujukan | 12 | 7 | 2 | 2 | Statistik & **Berita** jadi; Skuad separuh |
-| 3 — Metrik turunan | 1 | 1 | 4 | 1 | **LV-08 beban 14 hari jadi**, dirujuk 3 kartu |
-| 4 — Pasca laga | 0 | 0 | 7 | 0 | **Nol baris kode** |
-| 5 — Pra laga | 5 | 1 | 5 | 0 | **Halaman Pra-laga hidup** — PR-01/02/03/04/05 |
+| 0 — Fondasi data | 9 | 6 | 3 | 0 | Ketersediaan akhirnya punya skorsing, pinjaman, dan Bentrok |
+| 1 — Penarikan & rekonsiliasi | 10 | 5 | 0 | 0 | **Konflik dua feed nyata, pilihan analis tersimpan** |
+| 2 — Halaman rujukan | 14 | 3 | 1 | 2 | **Skuad selesai** — SQ-01 + SQ-02 |
+| 3 — Metrik turunan | 1 | 1 | 4 | 1 | LV-08 beban 14 hari, dirujuk 3 kartu |
+| 4 — Pasca laga | 6 | 1 | 0 | 0 | **Seluruh halaman jadi** — PS-01…PS-05 + Laporan |
+| 5 — Pra laga | 5 | 1 | 5 | 0 | Halaman Pra-laga hidup — PR-01/02/03/04/05 |
 | 6 — Live | 0 | 3 | 9 | 0 | Belum dimulai |
-| Lintas halaman | 3 | 4 | 4 | 0 | Chip sumber, Kesehatan Sumber, Konflik tampil |
+| Lintas halaman | 3 | 5 | 3 | 0 | Helper konvensi skor lahir, baru dipakai satu halaman |
 
-**240 test lulus.** Delapan halaman hidup: `/`, `/jadwal/`, `/pra/`, `/skuad/`, `/statistik/`, `/berita/`, `/cedera/`, `/match/<id>/`.
+**314 test lulus.** Sembilan halaman hidup: `/`, `/jadwal/`, `/pra/`, `/pasca/`,
+`/skuad/`, `/statistik/`, `/berita/`, `/cedera/`, `/match/<id>/`.
+
+> Angka Tahap 1 sebelumnya salah hitung (tertulis 7/4/1/1 untuk 15 baris).
+> Sudah dihitung ulang.
 
 ---
 
@@ -40,16 +44,16 @@ Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **�
 | ✅ | Jejak sumber per angka (`field_sources`) | **27.824/27.824 = 100%** |
 | 🟡 | `MatchEvent` dengan koordinat x/y | Koordinat ada di `MatchPlay`/`MatchShot`, bukan di `MatchEvent`. **Tidak ada event umpan sama sekali** — pass network mustahil dari data ini |
 | 🟡 | `Lineup` | Tertanam di `PlayerMatchStatistics`; tidak ada tempat menyimpan waktu terbit susunan resmi |
-| 🟡 | `Injury/Availability` | Sisi *availability* belum ada: skorsing, pinjaman, beban menit, status `Bentrok` |
-| 🟡 | `SourceHealth` | Fungsinya ada di `matches/source_health.py` tapi **tidak pernah dipanggil dari mana pun** |
+| ✅ | `Injury/Availability` | Skorsing, pinjaman, beban menit, dan status `Bentrok` semuanya ada. `Injury` tetap RIWAYAT, `PlayerAvailability` KEADAAN SEKARANG |
+| ✅ | `SourceHealth` | `matches/source_health.py` dipanggil context processor, tampil di semua halaman |
 | 🟡 | Tabel `source` | Cuma enum `DataSource`; ambang kesegaran ter-hardcode |
 | 🟡 | Tabel `ingest_log` | `MatchIngest` itu keadaan terakhir, bukan log. `rows` kini omong kosong |
 | 🟡 | Syarat selesai B: tidak ada nama ganda | **60 kunci nama aktif masih muncul >1×** (mayoritas orang berbeda) |
 | ⬜ | `PlayerSeasonStats` (per kompetisi per musim) | Diagregasi on-the-fly; tanpa ini tidak ada dasar pembanding se-liga |
 | ⬜ | `TransferRumour` | App `transfers/` masih stub Django |
-| ✅ | `NewsItem` | App `news/`, 8 feed, 86 berita tersimpan |
-| ✅ | `PlayerAvailability` | Status per-sumber — fondasi panel Konflik Sumber |
-| ⬜ | `SavedMoment` | Nol rujukan |
+| ✅ | `NewsItem` | App `news/`, 9 feed, ~90 berita tersimpan |
+| ✅ | `PlayerAvailability` | Status per-sumber, dua penulis: FPL dan turunan judul berita |
+| ✅ | `SavedMoment` | `matches/models.py` — asal analis vs asal sistem dibedakan |
 | ⬜ | Model `Competition` | `matches/competitions.py` sengaja fungsi murni, bukan model |
 
 ## Tahap 1 — Penarikan & rekonsiliasi
@@ -68,9 +72,9 @@ Keterangan status: **✅ selesai** · **🟡 sebagian** · **⬜ belum** · **�
 | ✅ | **Chip `sumber: A+C` di UI** | Tampil di 42 baris Statistik |
 | ✅ | Status kesegaran feed | Panel Kesehatan Sumber di semua halaman |
 | ✅ | Denyut nadi sumber | `SourceHeartbeat` — feed sehat tanpa data baru bukan feed mati |
-| ⬜ | Halaman Skuad menampilkan konflik | Kartu SQ-01 belum ada |
-| ⬜ | Pilihan analis tersimpan | Tidak ada tempat menyimpannya |
-| 🚫 | Konflik ketersediaan dari dua feed cedera | **Cuma Highlightly** — tidak ada yang bisa berselisih |
+| ✅ | Halaman Skuad menampilkan konflik | Panel SQ-01, dua kotak berdampingan + umur data |
+| ✅ | Pilihan analis tersimpan | `AvailabilityDecision` — statusnya ikut disalin, bukan cuma sumbernya |
+| ✅ | Konflik ketersediaan dari dua feed | FPL + turunan judul berita. **Kriteria selesai Tahap 1 terpenuhi** |
 
 ## Tahap 2 — Halaman rujukan
 
@@ -85,21 +89,21 @@ terpenuhi & dibuktikan test** ✅
 | 🟡 | Tanda "sampel kecil" | Desain minta baris **ditandai**; sekarang angkanya dikosongkan (`–`) |
 | 🚫 | Kolom Prog/90 | Metrik progresif **tidak ada di FotMob, Understat, maupun ESPN**. Diganti "1/3 Akhir/90" dengan label jujur |
 
-### Skuad — 🟡 halaman lama masih jalan
+### Skuad — ✅ selesai
 | | Butir | Catatan |
 |---|---|---|
-| ✅ | Kolom Pemain | |
-| 🟡 | Kolom Pos, Status, Catatan, Perkiraan kembali | Belum di halaman Skuad; pill status belum ada |
-| ⬜ | Rangka tabel 6 kolom sesuai desain | |
-| ⬜ | Kolom Beban 14 hr + pewarnaan risiko | Datanya bisa dihitung, rumusnya (LV-08) belum ada |
-| ⬜ | Header: waktu pembaruan + jumlah sumber | |
-| 🟡 | **Panel Konflik Sumber (SQ-01)** | **Tidak terblokir lagi** — FPL jadi sumber kedua, konfliknya nyata (Amad: FotMob bugar vs FPL 75%). Tinggal panelnya dibangun |
-| 🟡 | Urutan prioritas sumber ketersediaan | Datanya sudah dua sumber; aturannya belum ditulis |
+| ✅ | Rangka tabel 6 kolom sesuai desain | Pemain · Pos · Status · Catatan · Perkiraan kembali · Beban 14 hr |
+| ✅ | Pill status | Bugar hijau · Diragukan kuning · Absen merah · Dipinjamkan biru · **Bentrok ungu** |
+| ✅ | Kolom Beban 14 hr + pewarnaan risiko | Ambang yang sama dengan LV-08 |
+| ✅ | Header: waktu pembaruan + jumlah sumber | |
+| ✅ | **Panel Konflik Sumber (SQ-01)** | Dua kotak berdampingan, umur data masing-masing, tombol pilih & batalkan. **Ketiga aturannya ditulis di UI**, bukan cuma di dokumen |
+| ✅ | Urutan prioritas sumber ketersediaan | `players/availability.py`. FPL di atas NEWS — penyimpangan dari handoff yang ditulis alasannya |
+| 🟡 | Perkiraan kembali | Cuma diisi kalau sumbernya menyebut tanggal. Desain minta median durasi cedera sejenis; riwayat kita belum cukup, dan tebakan di kolom "perkiraan" lebih berbahaya daripada kolom kosong |
 
 ### Berita — ✅ hidup
 | | Butir | Catatan |
 |---|---|---|
-| ✅ | Halaman + route `/berita/` | 8 feed, semuanya diuji hidup |
+| ✅ | Halaman + route `/berita/` | 9 feed, semuanya diuji hidup |
 | ✅ | Umpan Berita bertingkat A/B/C | Aturan redaksi ditulis di UI, bukan cuma dokumen |
 | ✅ | Kesehatan Sumber | Lewat context processor |
 | 🟡 | "N sumber sepakat" | Dihitung per **grup kepemilikan** (Reach plc = 1), dan menandai kalau semua mengutip orang yang sama. Tapi pengelompokan topiknya masih kasar — nama depan kadang terpisah jadi topik sendiri ("Alejandro", "Lewis") |
@@ -117,10 +121,17 @@ terpenuhi & dibuktikan test** ✅
 | ⬜ | Bola kedua | Rumus belum dispesifikasikan, datanya juga tidak ada |
 | 🚫 | xT (expected threat) | Butuh event umpan berkoordinat yang tidak kita punya |
 
-## Tahap 4 — Pasca laga — ⬜ 0 dari 7
+## Tahap 4 — Pasca laga — ✅ hidup di `/pasca/`
 
-Nol baris kode. Halaman Pasca, Laporan Pertandingan, Angka Penentu (PS-02),
-Nilai Pemain (PS-03), Saved Moments (PS-04), Generator Prompt (PS-05).
+| | Butir | Catatan |
+|---|---|---|
+| ✅ | **Pemilih Laga (PS-01)** | 12 chip; laga lama di luar chip tetap bisa dibuka lewat URL |
+| ✅ | **Laporan Pertandingan** | Dua paragraf otomatis. `Susun ulang` mengganti susunan kalimat, **angkanya tidak pernah berubah** — ada tesnya |
+| ✅ | **Angka Penentu (PS-02)** | Empat metrik paling menyimpang dari kebiasaan musim, diukur simpangan baku. **Menolak menjawab** di bawah 6 laga pembanding |
+| ✅ | **Nilai Pemain (PS-03)** | `matches/ratings.py`, bobot per posisi. Baris tanpa data → `None`, bukan 6,0. Cadangan tak turun → "tidak turun" |
+| 🟡 | **Saved Moments (PS-04)** | Detektor sistem jalan; varian "asal live" belum bisa karena halaman Live belum ada |
+| ✅ | **Generator Prompt (PS-05)** | Lima tipe konten, tiga pilihan sumber, tiga nada caption. Urutan blok dijaga tes |
+| ✅ | Kriteria selesai handoff | Laporan laga lama dihasilkan tanpa campur tangan manual — dibuktikan `HalamanPascaTests` |
 
 ## Tahap 5 — Pra laga
 
@@ -153,7 +164,7 @@ tanpa UI. Handoff tegas: **bangun mode putar ulang dulu, jangan mode langsung**.
 | ✅ | Konflik antar sumber ditandai | Kartu Konflik di Statistik |
 | 🟡 | Rangka aplikasi | Rel nav kurang 4 halaman; belum ada bar atas |
 | 🟡 | Design token | **Tipografi belum dipasang** — Google Fonts tidak dimuat |
-| ⬜ | Konvensi skor: MU selalu ditulis lebih dulu | Belum ada helper terpusat |
+| 🟡 | Konvensi skor: MU selalu ditulis lebih dulu | `matches/scoreline.py` lahir dan bertes, tapi baru dipakai halaman Pasca. Halaman lain masih punya logikanya sendiri |
 | ⬜ | Indikator kekuatan bukti (3/3 · 2/3) | Prinsip desain no. 4 |
 | ⬜ | Toggle tampil/sembunyi chip sumber | |
 | ⬜ | Prinsip "tanpa aset" | |
@@ -162,21 +173,24 @@ tanpa UI. Handoff tegas: **bangun mode putar ulang dulu, jangan mode langsung**.
 
 ## Yang direkomendasikan berikutnya
 
-**1. Panel Konflik Sumber di Skuad (SQ-01).** Sekarang benar-benar bisa —
-`PlayerAvailability` sudah berisi dua sumber, dan konfliknya nyata:
-Amad Diallo dianggap bugar oleh FotMob tapi *"75% chance of playing"* oleh
-FPL. Tinggal dua kotak berdampingan dengan umur data masing-masing.
+**1. Tahap 3 — metrik turunan.** PPDA per laga tidak ada yang memblokir, dan
+Nilai Pemain (PS-03) sudah menetapkan bobot per aksi yang selama ini jadi
+alasan LV-06/PS-03 tertahan. Ini juga yang membuka Pemain Kunci (PR-06) dan
+Profil Lawan (PR-07) di halaman Pra.
 
-**2. Tabel Ketersediaan (SQ-02).** Pill Bugar/Diragukan/Absen/Dipinjamkan
-datanya sudah ada, dan kolom Beban 14 hr sudah jadi. Ini melengkapi halaman
-Skuad versi desain.
+**2. Bursa transfer (Tahap belum bernomor).** `transfers/` masih stub, dan
+Indeks Kebutuhan Skuad (BR-01) butuh bahan yang sekarang sudah ada semua:
+menit per posisi, usia, dan output per 90.
 
-**3. Tahap 4 — Pasca laga.** Nol dari tujuh, dan datanya sudah diam (laga
-selesai), jadi paling mudah diuji. Handoff menaruhnya sebelum Live justru
-karena itu.
+**3. Tahap 6 — Live, mode putar ulang dulu.** Handoff tegas soal urutannya.
+`RawPayload` sudah ada sebagai bahan tapi **belum ada satu pun pembacanya**.
 
 **Utang yang lahir hari ini:**
-- Pengelompokan topik di panel Kesepakatan masih kasar — nama depan terpisah
-  jadi topik sendiri. Perlu penggabungan nama depan+belakang.
-- `Injury` (Highlightly) sekarang cuma berguna sebagai **riwayat**, bukan
-  status. Perannya di halaman Cedera perlu diperjelas.
+- Bobot nilai pemain belum dikalibrasi — handoff tidak memberi angka, cuma
+  daftar aksi. Perbandingan antar posisi dijaga, besarannya belum.
+- Aturan 4 SQ-01 (susunan resmi menimpa semuanya) bertes tapi jarang menyala:
+  penarik kita baru mendapat susunan pada atau sesudah kick-off.
+- `derive_availability_news` belum masuk crontab produksi.
+- Baris pemain ganda masih terlihat di halaman Pasca (mis. 'Amad Diallo' dan
+  'Amad Diallo Traore' di laga yang sama) — utang lama dari `merge_duplicates`,
+  bukan lahir hari ini, tapi sekarang jadi kelihatan.

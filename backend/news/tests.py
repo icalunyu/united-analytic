@@ -159,3 +159,117 @@ class KutipanDariPenulisTests(SimpleTestCase):
 
     def test_penulis_kosong_nggak_error(self):
         self.assertEqual(dikutip_siapa('United win', None), '')
+
+
+class TurunanKetersediaanTests(SimpleTestCase):
+    """Menurunkan status cedera dari judul berita.
+
+    Sumber ini sengaja lemah, jadi yang dijaga tesnya adalah batas-batasnya:
+    dia harus DIAM lebih sering daripada dia menebak.
+    """
+
+    def test_judul_yang_jelas_dibaca(self):
+        from news.availability import baca_status
+        from players.models import PlayerAvailability
+
+        self.assertEqual(
+            baca_status('Bruno Fernandes ruled out for three weeks'),
+            PlayerAvailability.Status.OUT,
+        )
+        self.assertEqual(
+            baca_status('Amad Diallo a doubt for Ipswich clash'),
+            PlayerAvailability.Status.DOUBTFUL,
+        )
+        self.assertEqual(
+            baca_status('Casemiro suspended after red card'),
+            PlayerAvailability.Status.SUSPENDED,
+        )
+
+    def test_judul_yang_tidak_mengklaim_apa_apa_diabaikan(self):
+        from news.availability import baca_status
+
+        for judul in (
+            'Bruno Fernandes injury latest',
+            'Manchester United team news ahead of Ipswich',
+            'Five talking points from Old Trafford',
+        ):
+            self.assertIsNone(baca_status(judul), judul)
+
+    def test_berita_transfer_ditolak_walau_polanya_cocok(self):
+        """'X ruled out of move for Y' itu berita transfer, bukan cedera."""
+        from news.availability import baca_status
+
+        self.assertIsNone(
+            baca_status('Man Utd ruled out of transfer race for Serie A target')
+        )
+
+    def test_tidak_pernah_menaikkan_status_jadi_bugar(self):
+        """Salah ke arah 'bugar' bikin nama masuk prediksi susunan.
+
+        Salah ke arah 'diragukan' cuma bikin dia ditanyakan. Karena itu judul
+        seperti 'back in training' sengaja tidak menghasilkan apa pun.
+        """
+        from news.availability import baca_status
+
+        self.assertIsNone(baca_status('Lisandro Martinez back in training'))
+        self.assertIsNone(baca_status('Mount handed fitness boost'))
+
+    def test_nama_depan_tidak_dipakai_mencocokkan(self):
+        """'Mason' dan 'Harry' terlalu sering menunjuk orang lain."""
+        from news.availability import cocok_nama
+
+        class P:
+            name = 'Mason Mount'
+
+        self.assertIsNone(cocok_nama('Mason Greenwood scores again', P()))
+        self.assertEqual(cocok_nama('Mount ruled out', P()), 'Mount')
+
+
+class TurunanKetersediaanDBTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from players.models import Player, Team
+
+        cls.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        cls.bruno = Player.objects.create(name='Bruno Fernandes', team=cls.mu, is_active=True)
+
+    def _berita(self, judul, hari_lalu=1):
+        from datetime import timedelta
+
+        return NewsItem.objects.create(
+            publisher='Sky Sports',
+            publisher_group='Sky',
+            tier='B',
+            title=judul,
+            url=f'https://x.test/{abs(hash(judul))}',
+            published_at=timezone.now() - timedelta(days=hari_lalu),
+        )
+
+    def test_judul_terbaru_yang_menang(self):
+        from news.availability import temuan
+        from players.models import PlayerAvailability
+
+        self._berita('Bruno Fernandes ruled out for three weeks', hari_lalu=6)
+        self._berita('Bruno Fernandes a doubt for the weekend', hari_lalu=1)
+
+        hasil = temuan(list(NewsItem.objects.all()), [self.bruno], timezone.now())
+        self.assertEqual(len(hasil), 1)
+        self.assertEqual(hasil[0][1], PlayerAvailability.Status.DOUBTFUL)
+
+    def test_judul_basi_diabaikan(self):
+        """Status cedera bergerak cepat. Judul dua pekan lalu itu arsip."""
+        from news.availability import temuan
+
+        self._berita('Bruno Fernandes ruled out for three weeks', hari_lalu=30)
+        self.assertEqual(temuan(list(NewsItem.objects.all()), [self.bruno], timezone.now()), [])
+
+    def test_bersihkan_membuang_turunan_yang_sudah_lewat(self):
+        """Tanpa ini, konflik palsu menempel selamanya."""
+        from news.availability import bersihkan
+        from players.models import DataSource, PlayerAvailability
+
+        PlayerAvailability.objects.create(
+            player=self.bruno, source=DataSource.NEWS, status=PlayerAvailability.Status.OUT
+        )
+        self.assertEqual(bersihkan(timezone.now(), kecuali_ids=set()), 1)
+        self.assertFalse(PlayerAvailability.objects.filter(source=DataSource.NEWS).exists())

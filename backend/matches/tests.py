@@ -1824,3 +1824,588 @@ class KetersediaanFplTests(TestCase):
         n = PlayerAvailability.objects.filter(source=DataSource.FPL).count()
         self._jalankan()
         self.assertEqual(PlayerAvailability.objects.filter(source=DataSource.FPL).count(), n)
+
+
+class KonvensiSkorTests(TestCase):
+    """United selalu ditulis lebih dulu — prinsip lintas halaman.
+
+    Ditulis sekali di `matches/scoreline.py`. Tanpa helper terpusat, "2-1"
+    berubah arti diam-diam antar kartu dan pembaca tidak punya cara tahu mana
+    yang terbalik.
+    """
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town', short_name='Ipswich')
+
+    def _laga(self, kandang, mu_gol, lawan_gol):
+        return Match.objects.create(
+            home_team=self.mu if kandang else self.lawan,
+            away_team=self.lawan if kandang else self.mu,
+            home_score=mu_gol if kandang else lawan_gol,
+            away_score=lawan_gol if kandang else mu_gol,
+            kickoff_at=timezone.now(),
+            status=Match.Status.FINISHED,
+        )
+
+    def test_skor_selalu_mu_dulu_walau_tandang(self):
+        from matches import scoreline
+
+        self.assertEqual(scoreline.skor_teks(self._laga(True, 2, 0)), '2–0')
+        # Laga tandang: di DB tersimpan 0-2, tapi harus dibaca 2-0.
+        self.assertEqual(scoreline.skor_teks(self._laga(False, 2, 0)), '2–0')
+
+    def test_hasil_dari_sudut_pandang_mu(self):
+        from matches import scoreline
+
+        self.assertEqual(scoreline.hasil(self._laga(False, 2, 0)), 'W')
+        self.assertEqual(scoreline.hasil(self._laga(True, 0, 2)), 'L')
+        self.assertEqual(scoreline.hasil(self._laga(True, 1, 1)), 'D')
+
+    def test_belum_ada_skor_tidak_mengarang_nol(self):
+        from matches import scoreline
+
+        m = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan, kickoff_at=timezone.now()
+        )
+        self.assertEqual(scoreline.skor(m), (None, None))
+        self.assertIsNone(scoreline.hasil(m))
+
+
+class NilaiPemainTests(SimpleTestCase):
+    """PS-03 / LV-06.
+
+    Yang paling penting: baris yang kolomnya kosong TIDAK boleh keluar 6,0.
+    Nilai 6,0 dari data kosong kelihatan persis seperti nilai 6,0 dari
+    penampilan biasa-biasa saja, dan itu jenis kebohongan yang paling sulit
+    ketahuan.
+    """
+
+    def test_baris_kosong_tidak_jadi_enam_koma_nol(self):
+        from matches import ratings
+
+        hasil = ratings.nilai({'minutes_played': 90}, 'CM')
+        self.assertIsNone(hasil['nilai'])
+        self.assertFalse(hasil['cukup_data'])
+
+    def test_aksi_positif_menaikkan(self):
+        from matches import ratings
+
+        hasil = ratings.nilai(
+            {'minutes_played': 90, 'goals': 1, 'assists': 1, 'key_passes': 2,
+             'duels_won': 4, 'duels_lost': 1},
+            'CF',
+        )
+        self.assertTrue(hasil['cukup_data'])
+        self.assertGreater(hasil['nilai'], ratings.DASAR)
+        self.assertIn('gol', ' '.join(hasil['kontribusi']))
+
+    def test_kiper_dan_penyerang_tidak_dinilai_dengan_patokan_sama(self):
+        from matches import ratings
+
+        stat = {'minutes_played': 90, 'saves': 5, 'goals_conceded': 0, 'passes_accurate': 20}
+        kiper = ratings.nilai(stat, 'GK')
+        penyerang = ratings.nilai(stat, 'CF')
+        # Penyelamatan tidak punya bobot buat penyerang, jadi angkanya harus beda.
+        self.assertNotEqual(kiper['nilai'], penyerang['nilai'])
+
+    def test_nilai_dibatasi_satu_sampai_sepuluh(self):
+        from matches import ratings
+
+        hasil = ratings.nilai(
+            {'minutes_played': 90, 'goals': 9, 'assists': 5, 'key_passes': 9}, 'CF'
+        )
+        self.assertLessEqual(hasil['nilai'], ratings.MAKS_NILAI)
+
+
+    def test_cadangan_yang_tidak_turun_tidak_dinilai(self):
+        """Nol menit itu bukan penampilan buruk, itu bukan penampilan.
+
+        Baris statistik cadangan berisi nol di mana-mana; kalau nol dianggap
+        data, hasilnya 6,0 — angka yang persis sama dengan pemain yang main
+        90 menit tanpa menonjol.
+        """
+        from matches import ratings
+
+        hasil = ratings.nilai(
+            {'minutes_played': 0, 'goals': 0, 'assists': 0, 'duels_won': 0}, 'CM'
+        )
+        self.assertIsNone(hasil['nilai'])
+        self.assertFalse(hasil['bermain'])
+
+    def test_peluang_tercipta_dan_umpan_kunci_tidak_dihitung_dua_kali(self):
+        """Dua kolom itu angka yang sama di data kita (55 dari 55 baris identik).
+
+        Memberi bobot ke dua-duanya bikin gelandang kreatif menembus
+        langit-langit nilai gara-gara satu umpan dihitung dua kali.
+        """
+        from matches import ratings
+
+        dasar = {'minutes_played': 90, 'goals': 1, 'assists': 1}
+        cuma_cc = ratings.nilai({**dasar, 'chances_created': 4}, 'CM')
+        cuma_kp = ratings.nilai({**dasar, 'key_passes': 4}, 'CM')
+        keduanya = ratings.nilai({**dasar, 'chances_created': 4, 'key_passes': 4}, 'CM')
+
+        self.assertEqual(cuma_cc['nilai'], cuma_kp['nilai'])
+        self.assertEqual(keduanya['nilai'], cuma_cc['nilai'])
+
+    def test_nilai_ditulis_dengan_koma(self):
+        from matches import ratings
+
+        self.assertEqual(ratings.teks_nilai(7.25), '7,2')
+        self.assertEqual(ratings.teks_nilai(None), '–')
+
+
+class NilaiSkuadTests(TestCase):
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town')
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan, kickoff_at=timezone.now(),
+            status=Match.Status.FINISHED, home_score=2, away_score=0,
+        )
+
+    def _stat(self, nama, menit, **kolom):
+        from matches.models import PlayerMatchStatistics
+
+        p = Player.objects.create(name=nama, team=self.mu, position=kolom.pop('position', 'CM'))
+        return PlayerMatchStatistics.objects.create(
+            match=self.match, player=p, team=self.mu, minutes_played=menit, **kolom
+        )
+
+    def test_sampel_kecil_tidak_ditandai_tertinggi(self):
+        """Pemain masuk menit 88 lalu mencetak gol akan selalu menang kalau
+        diikutkan — dan 'pemain terbaik' versi itu bikin panelnya tak berguna."""
+        from matches import ratings
+
+        self._stat('Starter', 90, goals=1, assists=1, key_passes=3)
+        self._stat('Pengganti', 5, goals=2, assists=1, key_passes=1)
+
+        hasil = ratings.nilai_skuad(
+            self.match.player_statistics.select_related('player')
+        )
+        tertinggi = [r for r in hasil if r['tertinggi']]
+        self.assertEqual(len(tertinggi), 1)
+        self.assertEqual(tertinggi[0]['player'].name, 'Starter')
+
+    def test_tanpa_nilai_selalu_di_bawah(self):
+        from matches import ratings
+
+        self._stat('Berdata', 90, goals=1, assists=1, key_passes=2)
+        self._stat('Kosong', 90)
+
+        hasil = ratings.nilai_skuad(
+            self.match.player_statistics.select_related('player')
+        )
+        self.assertEqual(hasil[-1]['player'].name, 'Kosong')
+        self.assertIsNone(hasil[-1]['nilai'])
+
+
+class NilaiSkuadUrutanTests(TestCase):
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town')
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan, kickoff_at=timezone.now(),
+            status=Match.Status.FINISHED, home_score=1, away_score=0,
+        )
+
+    def test_tiga_keadaan_tiga_tempat(self):
+        """Bernilai → data kurang → tidak turun. Urutannya harus begitu."""
+        from matches import ratings
+        from matches.models import PlayerMatchStatistics
+
+        def stat(nama, **kolom):
+            p = Player.objects.create(name=nama, team=self.mu, position='CM')
+            PlayerMatchStatistics.objects.create(
+                match=self.match, player=p, team=self.mu, **kolom
+            )
+
+        stat('Cadangan', minutes_played=0)
+        stat('Tanpa data', minutes_played=90)
+        stat('Bernilai', minutes_played=90, goals=1, assists=1, duels_won=3)
+
+        hasil = ratings.nilai_skuad(self.match.player_statistics.select_related('player'))
+        self.assertEqual(
+            [r['player'].name for r in hasil], ['Bernilai', 'Tanpa data', 'Cadangan']
+        )
+        self.assertFalse(hasil[-1]['bermain'])
+        self.assertTrue(hasil[1]['bermain'])
+
+
+class AngkaPenentuTests(TestCase):
+    """PS-02 — empat metrik yang paling menyimpang dari kebiasaan musim.
+
+    Catatan buat yang menulis tes di sini: riwayat harus BERVARIASI. Kolom
+    yang nilainya identik di seluruh musim punya simpangan baku nol, dan
+    modulnya sengaja melewatinya — di data sungguhan, metrik sepak bola tidak
+    pernah punya varians nol, jadi kolom seperti itu hampir pasti artefak
+    (kolom yang diisi nilai default), bukan konsistensi luar biasa. Menampilkan
+    artefak sebagai "paling menyimpang" akan menaruhnya di puncak kartu.
+    """
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town')
+
+    def _laga(self, hari_lalu, **kolom):
+        from datetime import timedelta
+
+        from matches.models import MatchTeamStatistics
+
+        m = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan,
+            kickoff_at=timezone.now() - timedelta(days=hari_lalu),
+            season=2026, status=Match.Status.FINISHED, home_score=1, away_score=0,
+        )
+        MatchTeamStatistics.objects.create(match=m, team=self.mu, **kolom)
+        MatchTeamStatistics.objects.create(match=m, team=self.lawan, shots_total=8)
+        return m
+
+    def _riwayat(self, tembakan, **tetap):
+        """Delapan laga dengan tembakan bervariasi."""
+        for i, t in enumerate(tembakan):
+            kolom = {k: v[i] if isinstance(v, list) else v for k, v in tetap.items()}
+            self._laga(i + 1, shots_total=t, **kolom)
+
+    def test_menolak_menjawab_kalau_sampelnya_kurang(self):
+        """Dari tiga laga, satu laga aneh menggeser rata-ratanya sendiri."""
+        from matches import key_numbers
+
+        self._riwayat([9, 10, 11])
+        target = self._laga(0, shots_total=25)
+
+        self.assertEqual(key_numbers.untuk_laga(target), [])
+
+    def test_metrik_paling_menyimpang_yang_dipilih(self):
+        from matches import key_numbers
+
+        self._riwayat(
+            [8, 9, 10, 11, 12, 10, 9, 11],
+            possession_pct=[54, 55, 56, 55, 54, 56, 55, 55],
+        )
+        target = self._laga(0, shots_total=25, possession_pct=55)
+
+        hasil = key_numbers.untuk_laga(target)
+        self.assertTrue(hasil)
+        self.assertEqual(hasil[0]['kunci'], 'shots_total')
+        self.assertEqual(hasil[0]['arah'], 'untung')
+
+    def test_metrik_merugikan_ditandai_merah(self):
+        from matches import key_numbers
+
+        self._riwayat(
+            [8, 9, 10, 11, 12, 10, 9, 11],
+            fouls=[8, 9, 10, 9, 8, 11, 10, 9],
+        )
+        target = self._laga(0, shots_total=10, fouls=22)
+
+        hasil = key_numbers.untuk_laga(target)
+        pelanggaran = next(h for h in hasil if h['kunci'] == 'fouls')
+        self.assertEqual(pelanggaran['arah'], 'rugi')
+
+    def test_varians_nol_dilewati_bukan_dianggap_paling_menyimpang(self):
+        """Kolom yang seluruh musimnya bernilai sama itu artefak, bukan pola."""
+        from matches import key_numbers
+
+        self._riwayat([8, 9, 10, 11, 12, 10, 9, 11], corners=5)
+        target = self._laga(0, shots_total=10, corners=14)
+
+        hasil = key_numbers.untuk_laga(target)
+        self.assertNotIn('corners', [h['kunci'] for h in hasil])
+
+    def test_laga_sendiri_tidak_ikut_jadi_pembanding(self):
+        """Memasukkan laganya sendiri menarik rata-rata ke nilai yang diuji."""
+        from matches import key_numbers
+        from matches.models import MatchTeamStatistics
+
+        self._riwayat([10] * 4 + [10, 10, 10, 10])
+        # Riwayat sengaja dibuat bervariasi lewat kolom lain supaya z terhitung.
+        MatchTeamStatistics.objects.filter(team=self.mu).update(possession_pct=55)
+        for i, b in enumerate(MatchTeamStatistics.objects.filter(team=self.mu)):
+            b.shots_total = 8 + (i % 5)
+            b.save(update_fields=['shots_total'])
+
+        target = self._laga(0, shots_total=30)
+        riwayat = list(
+            MatchTeamStatistics.objects.filter(team=self.mu, match__season=2026)
+            .exclude(match=target)
+        )
+        rata_seharusnya = sum(r.shots_total for r in riwayat) / len(riwayat)
+
+        baris = MatchTeamStatistics.objects.get(match=target, team=self.mu)
+        hasil = key_numbers.hitung(baris, None, riwayat, [])
+        tembakan = next(h for h in hasil if h['kunci'] == 'shots_total')
+        self.assertAlmostEqual(tembakan['rata'], rata_seharusnya)
+        self.assertLess(tembakan['rata'], 30)
+
+
+class LaporanTests(TestCase):
+    """Laporan Pertandingan — dihasilkan tanpa campur tangan manual."""
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town', short_name='Ipswich')
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan, kickoff_at=timezone.now(),
+            status=Match.Status.FINISHED, home_score=2, away_score=0,
+            league_name='Premier League', venue='Old Trafford',
+        )
+
+    def _gol(self, nama, menit):
+        from matches.models import MatchEvent
+
+        p = Player.objects.create(name=nama, team=self.mu)
+        return MatchEvent.objects.create(
+            match=self.match, team=self.mu, player=p,
+            event_type=MatchEvent.EventType.GOAL, minute=menit,
+        )
+
+    def test_laporan_menyebut_skor_dan_pencetak_gol(self):
+        from matches import report
+
+        gol = [self._gol('Bruno Fernandes', 23), self._gol('Rasmus Hojlund', 67)]
+        hasil = report.susun(self.match, [], [], gol, [], varian=0)
+        teks = ' '.join(hasil['paragraf'])
+        self.assertIn('2–0', teks)
+        self.assertIn('Bruno Fernandes', teks)
+        self.assertIn("23'", teks)
+
+    def test_susun_ulang_tidak_mengubah_fakta(self):
+        """Kalau dua versi bisa berbeda faktanya, salah satunya bohong."""
+        from matches import report
+
+        gol = [self._gol('Bruno Fernandes', 23)]
+        versi = [
+            report.susun(self.match, [], [], gol, [], varian=v)
+            for v in range(report.JUMLAH_VARIAN)
+        ]
+        for v in versi:
+            self.assertIn('2–0', ' '.join(v['paragraf']))
+            self.assertIn('Bruno Fernandes', ' '.join(v['paragraf']))
+        # Susunannya memang harus berbeda, kalau tidak tombolnya tidak berguna.
+        self.assertGreater(len({v['judul'] for v in versi}), 1)
+
+    def test_tidak_mengarang_klausa_tanpa_data(self):
+        """Laga tanpa event gol tidak boleh menyebut pencetak gol."""
+        from matches import report
+
+        hasil = report.susun(self.match, [], [], [], [], varian=0)
+        teks = ' '.join(hasil['paragraf'])
+        self.assertNotIn('Gol United datang lewat', teks)
+        self.assertFalse(hasil['lengkap'])
+
+    def test_laga_tandang_tetap_ditulis_united_dulu(self):
+        from matches import report
+
+        m = Match.objects.create(
+            home_team=self.lawan, away_team=self.mu, kickoff_at=timezone.now(),
+            status=Match.Status.FINISHED, home_score=0, away_score=3,
+        )
+        hasil = report.susun(m, [], [], [], [], varian=0)
+        self.assertTrue(hasil['identitas']['judul'].startswith('Manchester United'))
+        self.assertIn('3–0', hasil['identitas']['judul'])
+
+
+class MomenSistemTests(TestCase):
+    """PS-04 — detektor pada data akhir laga."""
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town')
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan, kickoff_at=timezone.now(),
+            status=Match.Status.FINISHED, home_score=3, away_score=0,
+        )
+
+    def test_pencetak_gol_ganda_terdeteksi(self):
+        from matches import moments
+        from matches.models import PlayerMatchStatistics
+
+        p = Player.objects.create(name='Rasmus Hojlund', team=self.mu, position='CF')
+        s = PlayerMatchStatistics.objects.create(
+            match=self.match, player=p, team=self.mu, minutes_played=90, goals=2
+        )
+        hasil = moments.deteksi(self.match, None, None, [], [], [s])
+        self.assertTrue(any('2 gol' in t[2] for t in hasil))
+
+    def test_temuan_sistem_tidak_menumpuk_saat_dijalankan_ulang(self):
+        from matches import moments
+        from matches.models import PlayerMatchStatistics, SavedMoment
+
+        p = Player.objects.create(name='Rasmus Hojlund', team=self.mu, position='CF')
+        s = PlayerMatchStatistics.objects.create(
+            match=self.match, player=p, team=self.mu, minutes_played=90, goals=2
+        )
+        temuan = moments.deteksi(self.match, None, None, [], [], [s])
+        moments.segarkan(self.match, temuan)
+        moments.segarkan(self.match, temuan)
+        moments.segarkan(self.match, temuan)
+        self.assertEqual(SavedMoment.objects.filter(match=self.match).count(), 1)
+
+    def test_temuan_sistem_masuk_tanpa_tercentang(self):
+        """Kalau default-nya tercentang, prompt terisi sendiri oleh hal-hal
+        yang belum dibaca siapa pun."""
+        from matches import moments
+        from matches.models import PlayerMatchStatistics, SavedMoment
+
+        p = Player.objects.create(name='Rasmus Hojlund', team=self.mu, position='CF')
+        s = PlayerMatchStatistics.objects.create(
+            match=self.match, player=p, team=self.mu, minutes_played=90, goals=2
+        )
+        moments.segarkan(self.match, moments.deteksi(self.match, None, None, [], [], [s]))
+        self.assertFalse(SavedMoment.objects.get(match=self.match).selected)
+
+    def test_momen_analis_tidak_disentuh_detektor(self):
+        from matches import moments
+        from matches.models import SavedMoment
+
+        SavedMoment.objects.create(
+            match=self.match, minute=61, text='Perubahan bentuk jadi 4-2-2-2',
+            origin=SavedMoment.Asal.ANALIS, selected=True,
+        )
+        moments.segarkan(self.match, [])
+        m = SavedMoment.objects.get(match=self.match)
+        self.assertEqual(m.origin, SavedMoment.Asal.ANALIS)
+        self.assertTrue(m.selected)
+
+
+class GeneratorPromptTests(TestCase):
+    """PS-05 — urutan blok dan aturan teksnya adalah isinya."""
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town', short_name='Ipswich')
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan, kickoff_at=timezone.now(),
+            status=Match.Status.FINISHED, home_score=2, away_score=0,
+            league_name='Premier League', venue='Old Trafford',
+        )
+
+    def test_urutan_blok_dipertahankan(self):
+        from matches import prompts
+
+        teks = prompts.susun(self.match, [], [], [])
+        urutan = [
+            teks.index('GAYA VISUAL'),
+            teks.index('ATURAN TEKS'),
+            teks.index('LAGA'),
+            teks.index('DATA YANG BOLEH DIPAKAI'),
+            teks.index('ISI TIAP SLIDE'),
+            teks.index('FOOTER'),
+        ]
+        self.assertEqual(urutan, sorted(urutan))
+
+    def test_aturan_teks_datang_sebelum_datanya(self):
+        """Instruksi 'jangan bulatkan' yang datang setelah angkanya dibaca
+        jauh lebih sering diabaikan."""
+        from matches import prompts
+
+        teks = prompts.susun(self.match, [], [], [])
+        self.assertLess(teks.index('ATURAN TEKS'), teks.index('DATA YANG BOLEH DIPAKAI'))
+
+    def test_larangan_foto_dan_lambang_selalu_ada(self):
+        from matches import prompts
+
+        for tipe in prompts.TIPE:
+            teks = prompts.susun(self.match, [], [], [], tipe=tipe)
+            self.assertIn('lambang klub', teks, tipe)
+            self.assertIn('foto pemain', teks, tipe)
+
+    def test_tanpa_fakta_tercentang_prompt_melarang_mengarang(self):
+        from matches import prompts
+
+        teks = prompts.susun(self.match, [], [], [])
+        self.assertIn('jangan mengarang', teks)
+
+    def test_angka_disalin_apa_adanya(self):
+        from matches import prompts
+
+        angka = [{
+            'label': 'xG', 'nilai_teks': '2,71', 'pembanding': 'rata-rata musim 1,4',
+            'simpangan_teks': '2,1× simpangan baku di atas kebiasaan',
+        }]
+        teks = prompts.susun(self.match, [], angka, [], sumber='sistem')
+        self.assertIn('2,71', teks)
+
+    def test_tipe_konten_mengganti_format_bukan_datanya(self):
+        from matches import prompts
+
+        angka = [{
+            'label': 'xG', 'nilai_teks': '2,71', 'pembanding': 'rata-rata musim 1,4',
+            'simpangan_teks': '2,1× simpangan baku di atas kebiasaan',
+        }]
+        feed = prompts.susun(self.match, [], angka, [], tipe='feed', sumber='sistem')
+        thread = prompts.susun(self.match, [], angka, [], tipe='thread', sumber='sistem')
+        self.assertIn('2,71', feed)
+        self.assertIn('2,71', thread)
+        self.assertNotEqual(
+            feed[feed.index('ISI TIAP SLIDE'):], thread[thread.index('ISI TIAP SLIDE'):]
+        )
+
+
+class LangitLangitNilaiTests(SimpleTestCase):
+    """Nilai yang menyentuh langit-langit tidak boleh diam-diam jadi seri.
+
+    Dua penampilan yang mentahnya 10,2 dan 12,8 sama-sama tampil sebagai
+    "10,0". Kalau urutannya juga memakai angka yang sudah dipotong, yang
+    menentukan siapa di atas jadi abjad namanya.
+    """
+
+    def test_mentah_dilaporkan_dan_ditandai(self):
+        from matches import ratings
+
+        hasil = ratings.nilai(
+            {'minutes_played': 90, 'goals': 4, 'assists': 3, 'chances_created': 5}, 'CM'
+        )
+        self.assertEqual(hasil['nilai'], ratings.MAKS_NILAI)
+        self.assertGreater(hasil['mentah'], ratings.MAKS_NILAI)
+        self.assertTrue(hasil['dibatasi'])
+
+    def test_urutan_pakai_mentah_bukan_yang_sudah_dipotong(self):
+        from matches import ratings
+
+        class P:
+            def __init__(self, nama):
+                self.name = nama
+                self.position = 'CM'
+
+        class S:
+            def __init__(self, nama, **kolom):
+                self.player = P(nama)
+                self.starter = True
+                self.minutes_played = 90
+                for k, v in kolom.items():
+                    setattr(self, k, v)
+            def __getattr__(self, _):
+                return None
+
+        # 'Zulkarnain' lebih hebat tapi abjadnya terakhir — kalau urutannya
+        # pakai nilai yang sudah dipotong, dia kalah oleh abjad.
+        hasil = ratings.nilai_skuad([
+            S('Aditya', goals=3, assists=2, chances_created=4),
+            S('Zulkarnain', goals=6, assists=4, chances_created=8),
+        ])
+        self.assertEqual(hasil[0]['player'].name, 'Zulkarnain')
+
+
+class FormatAngkaIndonesiaTests(SimpleTestCase):
+    """Semua angka yang dibaca manusia pakai koma.
+
+    Satu angka bertitik di tengah angka-angka berkoma langsung kelihatan
+    seperti salah salin — dan kalimat-kalimat ini ujungnya masuk prompt konten
+    yang isinya disuruh disalin persis.
+    """
+
+    def test_simpangan_baku_pakai_koma(self):
+        from matches import key_numbers
+
+        hasil = key_numbers.hitung(
+            type('B', (), {'shots_total': 25})(),
+            None,
+            [type('B', (), {'shots_total': v})() for v in (8, 9, 10, 11, 12, 10, 9, 11)],
+            [],
+        )
+        self.assertTrue(hasil)
+        self.assertNotIn('.', hasil[0]['simpangan_teks'])
+        self.assertIn(',', hasil[0]['simpangan_teks'])

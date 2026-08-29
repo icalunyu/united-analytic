@@ -25,6 +25,9 @@
         <a href="{% url 'dashboard:pre_match' %}" class="nav-link {% if active_nav == 'pre_match' %}active{% endif %}">
           <span>🎯</span> Pra-laga
         </a>
+        <a href="{% url 'dashboard:post_match' %}" class="nav-link {% if active_nav == 'post_match' %}active{% endif %}">
+          <span>🧾</span> Pasca laga
+        </a>
         <a href="{% url 'dashboard:squad' %}" class="nav-link {% if active_nav == 'squad' %}active{% endif %}">
           <span>👥</span> Skuad
         </a>
@@ -39,9 +42,9 @@
         </a>
       </nav>
       <div class="mt-auto flex flex-col gap-2 px-2">
-        {# Kesehatan Sumber — prinsip desain no. 2: kalau nggak jelas asal
+        {% comment %}Kesehatan Sumber — prinsip desain no. 2: kalau nggak jelas asal
            datanya, jangan ditampilkan. Panel ini yang bikin "berhenti"
-           kelihatan sebelum angkanya terlanjur dikutip pas siaran. #}
+           kelihatan sebelum angkanya terlanjur dikutip pas siaran.{% endcomment %}
         <div class="rounded-lg border border-[var(--color-border)] p-2">
           <div class="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-wide text-gray-600">
             <span>Kesehatan Sumber</span>

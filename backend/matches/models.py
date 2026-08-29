@@ -787,3 +787,54 @@ class LineupSlot(models.Model):
     def __str__(self):
         nama = self.player.name if self.player else '(belum ditentukan)'
         return f'{self.position} {nama}'
+
+
+class SavedMoment(models.Model):
+    """Satu momen laga yang layak jadi bahan konten (LV-07 / PS-04).
+
+    Dua asal, dan bedanya harus kelihatan di UI. `ANALIS` = ditandai manusia
+    waktu laga berjalan. `SISTEM` = ditemukan detektor waktu data laga sudah
+    lengkap. Handoff minta keduanya dicampur di satu daftar tapi tetap
+    dibedakan asalnya, karena momen dari manusia membawa konteks yang tidak
+    ada di angka, dan momen dari sistem menangkap yang terlewat waktu nonton.
+
+    `text` disalin apa adanya dari kartu asalnya dan **tidak pernah ditulis
+    ulang**. Itu aturan eksplisit LV-07: begitu kalimatnya diparafrase, angka
+    di dalamnya bisa berubah tanpa ada yang sadar, dan momen ini ujungnya
+    masuk ke prompt yang dipakai bikin konten publik.
+    """
+
+    class Asal(models.TextChoices):
+        ANALIS = 'analis', 'Ditandai analis'
+        SISTEM = 'sistem', 'Dihitung dari data akhir'
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='saved_moments')
+    minute = models.PositiveSmallIntegerField(null=True, blank=True)
+    text = models.CharField(max_length=300)
+    # Angka pendukung apa adanya, mis. '0,82 xG'. Dipisah dari teks supaya
+    # generator prompt bisa menegaskan "jangan ubah angka ini".
+    figure = models.CharField(max_length=60, blank=True)
+    source = models.CharField(max_length=30, choices=DataSource.choices, blank=True)
+    # Kartu asalnya, mis. 'LV-03' atau 'PS-02' — biar bisa dilacak balik.
+    origin_card = models.CharField(max_length=10, blank=True)
+    origin = models.CharField(max_length=6, choices=Asal.choices, default=Asal.ANALIS)
+    # Tercentang = ikut masuk prompt PS-05.
+    selected = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['minute', 'id']
+        indexes = [models.Index(fields=['match', 'origin'])]
+        constraints = [
+            # Detektor jalan ulang tiap kali halaman Pasca dibuka. Tanpa ini
+            # temuan yang sama menumpuk jadi lusinan baris identik.
+            models.UniqueConstraint(
+                fields=['match', 'origin_card', 'text'],
+                condition=models.Q(origin='sistem'),
+                name='unique_system_moment_per_match',
+            )
+        ]
+
+    def __str__(self):
+        menit = f"{self.minute}'" if self.minute is not None else '—'
+        return f'{self.match_id} {menit} {self.text[:50]}'

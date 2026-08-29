@@ -197,3 +197,39 @@ class PlayerAvailability(models.Model):
     def bermasalah(self):
         """True kalau status ini bukan 'bugar' — dipakai buat menyaring UI."""
         return self.status not in (self.Status.FIT, self.Status.UNKNOWN)
+
+
+class AvailabilityDecision(models.Model):
+    """Pilihan ANALIS waktu dua sumber berselisih soal status seorang pemain.
+
+    Ini butir yang di checklist tertulis "Pilihan analis tersimpan — tidak ada
+    tempat menyimpannya". Sekarang ada tempatnya.
+
+    Kenapa statusnya ikut disalin, bukan cuma sumbernya: sumber bisa berubah
+    pikiran besok pagi. Kalau kita cuma menyimpan "analis memilih FPL", lalu
+    FPL diam-diam mengubah Amad dari 75% jadi absen, keputusan yang tercatat
+    berubah artinya tanpa ada yang menyentuhnya. Menyalin statusnya bikin
+    keputusan itu tetap berarti apa yang dimaksud waktu diambil — dan bikin
+    kita bisa memberi tahu analis kalau sumbernya sudah bergeser sejak itu.
+
+    Aturan SQ-01 yang tidak dilanggar model ini: pilihan analis **bukan data
+    sumber**. Dia disimpan di tabel terpisah, tidak pernah ditulis balik ke
+    `PlayerAvailability`, jadi penarikan berikutnya tidak bisa menimpanya dan
+    angka sumber tidak pernah tercemar tangan manusia.
+    """
+
+    player = models.OneToOneField(
+        Player, on_delete=models.CASCADE, related_name='availability_decision'
+    )
+    # Sumber yang dimenangkan analis.
+    source = models.CharField(max_length=30, choices=DataSource.choices)
+    # Status milik sumber itu PADA SAAT diputuskan.
+    status = models.CharField(max_length=6, choices=PlayerAvailability.Status.choices)
+    note = models.CharField(max_length=255, blank=True)
+    decided_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['player__name']
+
+    def __str__(self):
+        return f'{self.player.name}: pilih {self.source} ({self.status})'

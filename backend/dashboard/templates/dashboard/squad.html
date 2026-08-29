@@ -3,10 +3,162 @@
 {% block title %}Skuad — MU Analytics{% endblock %}
 
 {% block content %}
-<div class="mb-6">
-  <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Skuad</h1>
-  <p class="text-sm text-gray-500">{{ total }} pemain aktif</p>
+<div class="mb-6 flex flex-wrap items-baseline justify-between gap-2">
+  <div>
+    <h1 class="text-2xl font-bold text-[var(--color-text-strong)]">Skuad</h1>
+    <p class="text-sm text-gray-500">{{ total }} pemain aktif</p>
+  </div>
+  {% comment %}Header tabel diminta menampilkan waktu pembaruan dan jumlah sumber yang
+     direkonsiliasi — tanpa dua angka ini, tabel status kelihatan sama
+     meyakinkannya baik datanya baru ditarik maupun sudah basi seminggu.{% endcomment %}
+  <div class="text-right text-[11px] leading-snug text-gray-500">
+    {% if terakhir_diperbarui %}
+      <div>Diperbarui {{ terakhir_diperbarui|date:"j M Y, H:i" }} WIB</div>
+    {% else %}
+      <div class="text-amber-400">Belum ada data ketersediaan yang pernah ditarik</div>
+    {% endif %}
+    <div class="text-gray-600">
+      {{ sumber_terpakai|length }} sumber direkonsiliasi{% if sumber_terpakai %}:
+      {{ sumber_terpakai|join:" · " }}{% endif %}
+    </div>
+  </div>
 </div>
+
+{# ---------------------------------------------------------------- SQ-01 #}
+<div class="card mb-6 border-[rgba(228,184,74,.3)] p-4">
+  <div class="mb-1 flex items-baseline gap-2">
+    <h2 class="text-sm font-semibold text-[var(--color-text-strong)]">Konflik Sumber</h2>
+    <span class="font-mono text-[11px] text-gray-500">SQ-01</span>
+    {% if konflik %}
+      <span class="ml-auto font-mono text-[11px] text-amber-400">{{ konflik|length }} menunggu keputusan</span>
+    {% else %}
+      <span class="ml-auto font-mono text-[11px] text-emerald-400">tidak ada yang berselisih</span>
+    {% endif %}
+  </div>
+
+  {% comment %}Ketiga aturan ditulis di UI, bukan cuma di dokumen — permintaan eksplisit
+     di spesifikasi kartunya.{% endcomment %}
+  <ol class="mb-4 list-inside list-decimal text-[11px] leading-relaxed text-gray-500">
+    <li>Selama belum diputuskan, statusnya ditulis <span class="text-purple-300">Bentrok</span> dan jangan dipakai untuk konten.</li>
+    <li>Pilihan analis menimpa keduanya dan dicatat sebagai pilihan manual, bukan data sumber.</li>
+    <li>Susunan resmi yang terbit satu jam sebelum kick-off menimpa semuanya secara otomatis.</li>
+  </ol>
+
+  {% if laga_susunan %}
+  <p class="mb-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-300">
+    Susunan resmi {{ laga_susunan.home_team.name }} vs {{ laga_susunan.away_team.name }} sudah terbit —
+    pemain yang namanya ada di situ memakai aturan 3, bukan data feed.
+  </p>
+  {% endif %}
+
+  {% for k in konflik %}
+  <div class="mb-3 rounded-lg border border-[var(--color-border)] bg-white/[0.02] p-3 last:mb-0">
+    <div class="mb-2 flex items-baseline gap-2">
+      <span class="text-sm font-medium text-[var(--color-text-strong)]">{{ k.player.name }}</span>
+      <span class="font-mono text-[10px] uppercase text-gray-600">{{ k.player.position|default:"—" }}</span>
+    </div>
+    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {% for p in k.pilihan %}
+      <form method="post" action="{% url 'dashboard:availability_decide' k.player.pk %}"
+            class="flex flex-col rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2.5">
+        {% csrf_token %}
+        <input type="hidden" name="sumber" value="{{ p.sumber }}">
+        <div class="mb-1 flex items-baseline justify-between gap-2">
+          <span class="font-mono text-[10px] uppercase tracking-wide text-gray-500">{{ p.label_sumber }}</span>
+          <span class="font-mono text-[10px] {% if p.umur %}text-gray-600{% else %}text-amber-400{% endif %}">
+            {{ p.umur|default:"umur tidak diketahui" }}
+          </span>
+        </div>
+        <div class="mb-1 text-sm font-semibold text-[var(--color-text-strong)]">
+          {{ p.status_label }}{% if p.chance_pct is not None %}
+            <span class="font-mono text-xs font-normal text-gray-400">· {{ p.chance_pct }}%</span>
+          {% endif %}
+        </div>
+        {% if p.catatan %}
+        <div class="mb-2 text-[11px] leading-snug text-gray-500">{{ p.catatan }}</div>
+        {% endif %}
+        <button type="submit"
+                class="mt-auto rounded border border-[var(--color-mu)]/50 px-2 py-1 text-[11px] font-medium text-[var(--color-mu)] transition-colors hover:bg-[var(--color-mu)]/15">
+          Pakai yang ini
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+  {% empty %}
+  <p class="text-[11px] leading-relaxed text-gray-500">
+    Semua sumber sepakat, atau cuma satu sumber yang punya klaim. Panel ini terisi
+    sendiri begitu dua feed menulis status berbeda untuk pemain yang sama.
+  </p>
+  {% endfor %}
+</div>
+
+{# ---------------------------------------------------------------- SQ-02 #}
+<div class="card mb-6 overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-wide text-gray-500">
+        <th class="px-3 py-2 font-medium">Pemain</th>
+        <th class="px-3 py-2 font-medium">Pos</th>
+        <th class="px-3 py-2 font-medium">Status</th>
+        <th class="px-3 py-2 font-medium">Catatan</th>
+        <th class="px-3 py-2 font-medium whitespace-nowrap">Perkiraan kembali</th>
+        <th class="px-3 py-2 text-right font-medium whitespace-nowrap">Beban {{ jendela_hari }} hr</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-[var(--color-border)]/60">
+      {% for r in baris %}
+      <tr class="{% if not r.aman_untuk_konten %}bg-purple-500/[0.06]{% endif %}">
+        <td class="px-3 py-2">
+          <span class="font-medium text-[var(--color-text-strong)]">{{ r.player.name }}</span>
+          {% if r.player.shirt_number %}
+            <span class="ml-1 font-mono text-[10px] text-gray-600">#{{ r.player.shirt_number }}</span>
+          {% endif %}
+        </td>
+        <td class="px-3 py-2 font-mono text-[11px] uppercase text-gray-500">{{ r.player.position|default:"—" }}</td>
+        <td class="px-3 py-2">
+          <span class="inline-block rounded px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset {{ r.kelas }}">{{ r.label }}</span>
+          {% if r.hasil.asal == 'analis' %}
+            <span class="ml-1 font-mono text-[9px] uppercase text-gray-600" title="Pilihan manual analis, bukan data sumber">manual</span>
+          {% elif r.hasil.asal == 'susunan' %}
+            <span class="ml-1 font-mono text-[9px] uppercase text-emerald-400">susunan resmi</span>
+          {% endif %}
+        </td>
+        <td class="px-3 py-2 text-[11px] leading-snug text-gray-500">
+          {{ r.hasil.catatan|default:"—" }}
+          {% if not r.aman_untuk_konten %}
+            <span class="block text-purple-300">Jangan dipakai untuk konten sebelum diputuskan.</span>
+          {% endif %}
+          {% if r.keputusan %}
+            <form method="post" action="{% url 'dashboard:availability_reset' r.player.pk %}" class="mt-0.5 inline">
+              {% csrf_token %}
+              <button type="submit" class="text-[10px] text-gray-600 underline hover:text-white">Batalkan pilihan</button>
+            </form>
+          {% endif %}
+        </td>
+        <td class="px-3 py-2 font-mono text-[11px] text-gray-500">
+          {{ r.perkiraan_kembali|date:"j M"|default:"—" }}
+        </td>
+        <td class="px-3 py-2 text-right font-mono text-[11px] whitespace-nowrap
+                   {% if r.beban.tingkat == 'mendesak' %}text-red-400{% elif r.beban.tingkat == 'awasi' %}text-amber-400{% else %}text-gray-500{% endif %}"
+            title="{{ r.beban.alasan }}">
+          {% if r.beban %}{{ r.beban.menit }}'{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="px-3 py-6 text-center text-sm text-gray-500">Belum ada data skuad.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="mb-6 text-[11px] leading-relaxed text-gray-600">
+  Kolom <span class="text-gray-400">Perkiraan kembali</span> cuma diisi kalau sumbernya
+  benar-benar menyebut tanggal. Desain aslinya minta angka ini dihitung dari median
+  durasi pemulihan cedera sejenis — riwayat cedera yang kita punya belum cukup untuk
+  itu, dan menaruh tebakan di kolom bertanda "perkiraan" lebih berbahaya daripada
+  membiarkannya kosong.
+</p>
 
 {% if beban_teratas %}
 <div class="card mb-6 {% if ada_yang_perlu_diawasi %}border-[rgba(228,184,74,.3)]{% endif %} p-4">
@@ -30,37 +182,4 @@
   </div>
 </div>
 {% endif %}
-
-{% for group in groups %}
-<div class="mb-8">
-  <h2 class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">{{ group.label }}</h2>
-  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-    {% for p in group.players %}
-    <div class="card flex items-center gap-3 p-3">
-      <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5">
-        {% if p.photo_url %}
-          <img src="{{ p.photo_url }}" alt="{{ p.name }}" class="h-full w-full object-cover">
-        {% else %}
-          <span class="font-mono text-sm text-gray-400">{{ p.shirt_number|default:"?" }}</span>
-        {% endif %}
-      </div>
-      <div>
-        <div class="text-sm font-medium text-[var(--color-text-strong)]">{{ p.name }}</div>
-        <div class="text-xs text-gray-500">
-          {% if p.shirt_number %}#{{ p.shirt_number }} · {% endif %}{{ p.nationality }}
-        </div>
-        {% if p.beban and p.beban.menit %}
-        <div class="mt-0.5 text-[10px] {% if p.beban.tingkat == 'mendesak' %}text-red-400{% elif p.beban.tingkat == 'awasi' %}text-amber-400{% else %}text-gray-600{% endif %}"
-             title="{{ p.beban.alasan }}">
-          {{ p.beban.menit }}' / {{ jendela_hari }} hr
-        </div>
-        {% endif %}
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% empty %}
-<p class="card p-6 text-sm text-gray-500">Belum ada data skuad.</p>
-{% endfor %}
 {% endblock %}

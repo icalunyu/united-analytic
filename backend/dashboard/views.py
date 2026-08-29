@@ -1,13 +1,39 @@
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.shortcuts import get_object_or_404, render
+from django.http import HttpResponseBadRequest
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
-from matches import competitions, workload
+from matches import (
+    competitions,
+    key_numbers,
+    moments,
+    prompts,
+    ratings,
+    report,
+    scoreline,
+    workload,
+)
+from players import availability
 from players.provenance import describe_sources
-from matches.models import FieldConflict, Match, MatchEvent, PlayerMatchStatistics
+from matches.models import (
+    FieldConflict,
+    Match,
+    MatchEvent,
+    MatchTeamStatistics,
+    PlayerMatchStatistics,
+    SavedMoment,
+)
 from matches.momentum import build_momentum
-from players.models import Injury, Player, Team
+from players.models import (
+    AvailabilityDecision,
+    Injury,
+    Player,
+    PlayerAvailability,
+    Team,
+)
 
 LIVE_STATUSES = [Match.Status.LIVE, Match.Status.HALFTIME]
 FINISHED_STATUSES = [
@@ -380,9 +406,17 @@ def match_detail(request, match_id):
 
 
 def squad(request):
-    players = Player.objects.filter(team__is_manchester_united=True, is_active=True).order_by(
-        'name'
+    players = list(
+        Player.objects.filter(team__is_manchester_united=True, is_active=True)
+        .select_related('team')
+        .order_by('name')
     )
+    sekarang = timezone.now()
+
+    # SQ-01 + SQ-02. Rekonsiliasinya di players/availability.py, bukan di sini,
+    # karena aturan "siapa menang kalau dua sumber beda" harus bisa dites tanpa
+    # menyalakan seluruh halaman.
+    baris, konflik, laga_susunan = availability.rekonsiliasi(players, sekarang)
 
     # Beban 14 hari (LV-08). Rumusnya ditulis sekali di matches/workload.py
     # karena dirujuk tiga kartu berbeda: kolom ini, Kandidat Rotasi, dan
@@ -392,30 +426,29 @@ def squad(request):
     if mu:
         beban = {
             r['player'].pk: r
-            for r in workload.beban_skuad(mu, timezone.now(), pemain=players)
+            for r in workload.beban_skuad(mu, sekarang, pemain=players)
         }
-    for p in players:
-        p.beban = beban.get(p.pk)
 
-    groups = []
-    for label, codes in POSITION_GROUPS:
-        members = [p for p in players if p.position in codes]
-        if members:
-            groups.append({'label': label, 'players': members})
-
-    others = [
-        p for p in players if p.position not in [c for _, codes in POSITION_GROUPS for c in codes]
-    ]
-    if others:
-        groups.append({'label': 'Lainnya', 'players': others})
+    urutan = {kode: i for i, (_, codes) in enumerate(POSITION_GROUPS) for kode in codes}
+    for r in baris:
+        p = r['player']
+        r['beban'] = beban.get(p.pk)
+        r['urutan'] = (urutan.get(p.position, len(urutan)), p.name)
+    baris.sort(key=lambda r: r['urutan'])
 
     return render(
         request,
         'dashboard/squad.html',
         {
             'active_nav': 'squad',
-            'groups': groups,
-            'total': players.count(),
+            'baris': baris,
+            'konflik': konflik,
+            'laga_susunan': laga_susunan,
+            'total': len(players),
+            'sumber_terpakai': [
+                availability.label_sumber(s) for s in availability.sumber_terpakai(baris)
+            ],
+            'terakhir_diperbarui': availability.terakhir_diperbarui(baris),
             # Selalu tampilkan lima teratas, bukan cuma yang di atas ambang.
             # Kartu yang hilang waktu semua pemain aman bikin orang nggak bisa
             # bedain "nggak ada yang perlu diistirahatkan" dari "fiturnya
@@ -428,6 +461,34 @@ def squad(request):
             'menit_patokan': workload.MENIT_PATOKAN,
         },
     )
+
+
+@require_POST
+def availability_decide(request, player_id):
+    """Analis memenangkan satu sumber untuk satu pemain (aturan 3 di SQ-01)."""
+    player = get_object_or_404(Player, pk=player_id, team__is_manchester_united=True)
+    sumber = request.POST.get('sumber', '')
+    entri = PlayerAvailability.objects.filter(player=player, source=sumber).first()
+    if entri is None:
+        return HttpResponseBadRequest(
+            f'Sumber {sumber!r} nggak punya status buat {player.name}.'
+        )
+    AvailabilityDecision.objects.update_or_create(
+        player=player,
+        defaults={
+            'source': sumber,
+            # Status disalin, bukan cuma sumbernya — lihat alasannya di model.
+            'status': entri.status,
+            'note': (request.POST.get('catatan') or '')[:255],
+        },
+    )
+    return redirect('dashboard:squad')
+
+
+@require_POST
+def availability_reset(request, player_id):
+    AvailabilityDecision.objects.filter(player_id=player_id).delete()
+    return redirect('dashboard:squad')
 
 
 def injuries(request):
@@ -846,3 +907,165 @@ def news(request):
             'total': NewsItem.objects.count(),
         },
     )
+
+
+# ---------------------------------------------------------------- pasca laga
+
+# Berapa laga yang muncul sebagai chip di PS-01. Bukan cuma laga terakhir —
+# handoff eksplisit soal ini, karena bahan konten sering dibuat beberapa hari
+# sesudah laganya lewat.
+JUMLAH_CHIP_LAGA = 12
+
+TIPE_KONTEN = prompts.TIPE
+SUMBER_PROMPT = prompts.SUMBER
+NADA_CAPTION = prompts.NADA
+
+
+def _int_aman(nilai, bawaan=0):
+    try:
+        return int(nilai)
+    except (TypeError, ValueError):
+        return bawaan
+
+
+def _pilih_laga(request):
+    """(laga terpilih, daftar chip). Dipakai view utama dan handler POST."""
+    daftar = list(
+        mu_matches()
+        .filter(status__in=FINISHED_STATUSES)
+        .order_by('-kickoff_at')[:JUMLAH_CHIP_LAGA]
+    )
+    diminta = request.GET.get('laga') or request.POST.get('laga')
+    if diminta:
+        pilihan = next((m for m in daftar if str(m.pk) == str(diminta)), None)
+        if pilihan is None:
+            # Laga lama yang di luar 12 chip tetap boleh dibuka lewat URL —
+            # kalau tidak, laporan laga musim lalu jadi mustahil dibuat.
+            pilihan = (
+                mu_matches().filter(pk=diminta, status__in=FINISHED_STATUSES).first()
+            )
+        if pilihan is not None:
+            return pilihan, daftar
+    return (daftar[0] if daftar else None), daftar
+
+
+def post_match(request):
+    match, daftar = _pilih_laga(request)
+    if match is None:
+        return render(
+            request,
+            'dashboard/post_match.html',
+            {'active_nav': 'post_match', 'daftar': [], 'match': None},
+        )
+
+    mu_team, lawan_team, _ = scoreline.sudut_pandang(match)
+
+    stats = list(
+        PlayerMatchStatistics.objects.filter(match=match, team=mu_team).select_related('player')
+    )
+    nilai_pemain = ratings.nilai_skuad(stats)
+    angka = key_numbers.untuk_laga(match)
+
+    baris_tim = {b.team_id: b for b in MatchTeamStatistics.objects.filter(match=match)}
+    baris_mu = baris_tim.get(mu_team.pk if mu_team else None)
+    baris_lawan = baris_tim.get(lawan_team.pk if lawan_team else None)
+
+    # PS-04: detektor dijalankan ulang pada data lengkap tiap halaman dibuka.
+    # Menulis pada GET memang tidak lazim, tapi operasinya idempoten — momen
+    # yang sama tidak pernah tersimpan dua kali (lihat constraint di model) —
+    # dan alternatifnya (cron terpisah) bikin halaman menampilkan temuan basi
+    # untuk laga yang baru saja datanya lengkap.
+    moments.segarkan(
+        match,
+        moments.deteksi(match, baris_mu, baris_lawan, angka, nilai_pemain, stats),
+    )
+    momen = list(SavedMoment.objects.filter(match=match))
+
+    gol = list(
+        MatchEvent.objects.filter(match=match, event_type=MatchEvent.EventType.GOAL)
+        .select_related('player', 'team')
+        .order_by('minute', 'extra_minute')
+    )
+    gol_mu = [g for g in gol if g.team_id == (mu_team.pk if mu_team else None)]
+    gol_lawan = [g for g in gol if g.team_id != (mu_team.pk if mu_team else None)]
+
+    varian = _int_aman(request.GET.get('varian'), 0)
+    laporan = report.susun(match, angka, nilai_pemain, gol_mu, gol_lawan, varian=varian)
+
+    tipe = request.GET.get('tipe') if request.GET.get('tipe') in TIPE_KONTEN else 'carousel'
+    sumber = (
+        request.GET.get('sumber') if request.GET.get('sumber') in SUMBER_PROMPT else 'gabungan'
+    )
+    nada = request.GET.get('nada') if request.GET.get('nada') in NADA_CAPTION else 'analis'
+    terpilih = [m for m in momen if m.selected]
+
+    return render(
+        request,
+        'dashboard/post_match.html',
+        {
+            'active_nav': 'post_match',
+            'match': match,
+            'daftar': [
+                {'match': m, 'teks': scoreline.ringkas(m)[0], 'tempat': scoreline.ringkas(m)[1]}
+                for m in daftar
+            ],
+            'laporan': laporan,
+            'laporan_teks': report.teks_polos(laporan),
+            'varian_berikut': (varian + 1) % report.JUMLAH_VARIAN,
+            'angka': angka,
+            'min_sampel': key_numbers.MIN_SAMPEL,
+            'nilai_pemain': nilai_pemain,
+            'menit_sampel_kecil': ratings.MENIT_SAMPEL_KECIL,
+            'momen': momen,
+            'jumlah_terpilih': len(terpilih),
+            'tipe': tipe,
+            'sumber': sumber,
+            'nada': nada,
+            'tipe_pilihan': [(k, v['label']) for k, v in TIPE_KONTEN.items()],
+            'sumber_pilihan': list(SUMBER_PROMPT.items()),
+            'nada_pilihan': [(k, k.title()) for k in NADA_CAPTION],
+            'prompt': prompts.susun(
+                match, terpilih, angka, nilai_pemain, tipe=tipe, sumber=sumber
+            ),
+            'caption': prompts.caption(match, terpilih, angka, nada=nada),
+        },
+    )
+
+
+def _kembali_ke_pasca(request, match_id):
+    return redirect(f"{reverse('dashboard:post_match')}?laga={match_id}")
+
+
+@require_POST
+def moment_toggle(request, moment_id):
+    """Centang / lepas centang — menentukan apa yang masuk prompt PS-05."""
+    m = get_object_or_404(SavedMoment, pk=moment_id)
+    m.selected = not m.selected
+    m.save(update_fields=['selected'])
+    return _kembali_ke_pasca(request, m.match_id)
+
+
+@require_POST
+def moment_add(request, match_id):
+    match = get_object_or_404(Match, pk=match_id)
+    teks = (request.POST.get('teks') or '').strip()
+    if not teks:
+        return HttpResponseBadRequest('Momen tanpa teks nggak bisa disimpan.')
+    SavedMoment.objects.create(
+        match=match,
+        minute=_int_aman(request.POST.get('menit'), None) if request.POST.get('menit') else None,
+        text=teks[:300],
+        figure=(request.POST.get('angka') or '')[:60],
+        origin=SavedMoment.Asal.ANALIS,
+        origin_card='PS-04',
+        selected=True,
+    )
+    return _kembali_ke_pasca(request, match.pk)
+
+
+@require_POST
+def moment_delete(request, moment_id):
+    m = get_object_or_404(SavedMoment, pk=moment_id)
+    match_id = m.match_id
+    m.delete()
+    return _kembali_ke_pasca(request, match_id)
