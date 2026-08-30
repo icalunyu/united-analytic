@@ -1666,3 +1666,48 @@ tidak pernah mirip), dan jaga teks tetap terbaca di atas foto.
 Catatan yang perlu diingat pemakainya: lambang klub dan logo kompetisi itu
 merek dagang. Handoff menghindarinya bukan karena selera — tapi itu keputusan
 user, bukan keputusan app.
+
+## 28. Memilih hipotesis pindah dari Django admin ke halaman Pra-laga
+
+User: *"aku ga mau pilih dari django admin, aku mau pilih di pra match aja."*
+Adil — `createsuperuser` yang saya sodorkan itu jalan memutar, bukan syarat.
+
+### Yang ketahuan waktu membukanya: alur lamanya memang rapuh
+
+`predict_lineup` mencetak instruksi *"Buka admin, sisakan tiga yang mau kamu
+pertaruhkan, hapus sisanya."* Menghapus tidak akan bertahan: command yang sama
+bikin **snapshot BARU** tiap susunan berubah, dan snapshot baru lahir membawa
+seluruh kandidat lagi. Pilihan yang diwujudkan sebagai penghapusan lenyap tiap
+kali prediksinya diperbarui, tanpa ada yang memberitahu.
+
+Jadi bentuknya bukan penghapusan tapi **penanda** — `HypothesisItem.selected` —
+yang ikut terbawa ke snapshot berikutnya lewat pencocokan `text`. Sifat
+append-only snapshot tidak dilanggar: tiap snapshot tetap merekam apa yang
+dipertaruhkan PADA SAAT ITU.
+
+Kandidat yang kalimatnya berubah sengaja tidak ikut terbawa — kalau dasarnya
+bergeser, dia memang layak dipilih ulang.
+
+### Apakah ini "approval flow" yang dilarang handoff?
+
+Bukan, dan bedanya penting. Handoff melarang: *"tombol lock, status 'diperiksa
+oleh X', atau approval flow; app tidak punya login sehingga klaim itu tidak
+bisa dibuktikan."* Yang dilarang adalah klaim tentang SIAPA yang menyetujui.
+
+Ini pilihan redaksional: kandidat mana yang naik jadi klaim. Handoff justru
+menuntutnya — *"App tidak menyimpulkan, dia menyiapkan bukti. Kesimpulan tetap
+dari analis."* Tidak ada nama, tidak ada status persetujuan, tidak ada yang
+terkunci.
+
+### Dua pagar
+
+**Maksimal tiga.** Desain PR-03 minta tiga kartu. Yang keempat ditolak dengan
+alasan yang **kelihatan di halaman** (`?penuh=1`), bukan 400 telanjang — ditolak
+diam-diam sama membingungkannya dengan tombol yang rusak.
+
+**Beku sesudah peluit.** Mengubah apa yang dipertaruhkan setelah tahu hasilnya
+menghapus seluruh guna panel Cek Prediksi. Endpoint-nya menolak dengan 400.
+
+Snapshot lama yang lahir sebelum kolom ini ada punya nol pilihan. Menampilkannya
+sebagai panel kosong bikin data yang ada kelihatan hilang, jadi seluruh isinya
+dianggap dipertaruhkan — apa adanya seperti dulu.

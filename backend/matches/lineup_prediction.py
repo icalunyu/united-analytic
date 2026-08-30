@@ -372,6 +372,12 @@ def build_note(prediksi, window):
 POSSESSION_WAJAR = (5, 95)
 
 
+# Desain PR-03 minta TIGA kartu. Kandidat boleh lebih banyak — itu gunanya
+# kandidat — tapi yang dipertaruhkan dibatasi tiga. Panel berisi enam dugaan
+# bukan analisis, itu daftar kemungkinan.
+MAKS_HIPOTESIS = 3
+
+
 def suggest_hypotheses(team, before, window=DEFAULT_WINDOW):
     """Kandidat hipotesis dari pola data — BAHAN, bukan klaim final.
 

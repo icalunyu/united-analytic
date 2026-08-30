@@ -18,8 +18,10 @@ from matches import (
 )
 from players import availability
 from players.provenance import describe_sources
+from matches.lineup_prediction import MAKS_HIPOTESIS
 from matches.models import (
     FieldConflict,
+    HypothesisItem,
     Match,
     MatchEvent,
     MatchTeamStatistics,
@@ -811,6 +813,20 @@ def pre_match(request):
     menang = sum(1 for m in h2h if m.mu_result == 'W')
     seri = sum(1 for m in h2h if m.mu_result == 'D')
 
+    # PR-03. Kandidat dihasilkan mesin; yang DIPERTARUHKAN dipilih analis —
+    # handoff: "App tidak menyimpulkan, dia menyiapkan bukti."
+    semua = list(snapshot.hypotheses.all()) if snapshot else []
+    dipertaruhkan = [h for h in semua if h.selected]
+    kandidat = [h for h in semua if not h.selected]
+    # Snapshot lama (sebelum kolom `selected` ada) tidak punya satu pun pilihan.
+    # Menampilkannya sebagai panel kosong bikin data yang ada kelihatan hilang,
+    # jadi seluruh isinya dianggap dipertaruhkan — apa adanya seperti dulu.
+    if not dipertaruhkan and (berjalan or selesai):
+        dipertaruhkan, kandidat = semua, []
+    # Sesudah peluit, pilihannya beku: mengubah apa yang dipertaruhkan setelah
+    # tahu hasilnya menghapus seluruh guna panel Cek Prediksi.
+    bisa_dipilih = bool(snapshot) and not berjalan and not selesai
+
     return render(
         request,
         'dashboard/pre_match.html',
@@ -822,7 +838,12 @@ def pre_match(request):
             'selesai': selesai,
             'snapshot': snapshot,
             'slots': slots,
-            'hipotesis': list(snapshot.hypotheses.all()) if snapshot else [],
+            'hipotesis': dipertaruhkan,
+            'kandidat': kandidat,
+            'maks_hipotesis': MAKS_HIPOTESIS,
+            'kuota_penuh': len(dipertaruhkan) >= MAKS_HIPOTESIS,
+            'bisa_dipilih': bisa_dipilih,
+            'tolak_penuh': request.GET.get('penuh') == '1',
             'h2h': h2h,
             'h2h_menang': menang,
             'h2h_seri': seri,
@@ -830,6 +851,36 @@ def pre_match(request):
             'mundur_hari': (match.kickoff_at - now).days if not selesai else None,
         },
     )
+
+
+@require_POST
+def hypothesis_toggle(request, item_id):
+    """Analis memilih hipotesis mana yang dipertaruhkan (PR-03).
+
+    Bukan approval flow yang dilarang handoff — tidak ada yang dikunci, tidak
+    ada status "diperiksa oleh X", dan tidak ada login yang diklaim. Ini
+    pilihan redaksional: kandidat mana yang naik jadi klaim. Handoff justru
+    menuntutnya: *"Kesimpulan tetap dari analis."*
+    """
+    item = get_object_or_404(HypothesisItem.objects.select_related('snapshot__match'), pk=item_id)
+    match = item.snapshot.match
+    kembali = f"{reverse('dashboard:pre_match')}?match={match.pk}"
+
+    if match.kickoff_at <= timezone.now():
+        return HttpResponseBadRequest(
+            'Laga sudah kick-off. Mengubah apa yang dipertaruhkan setelah tahu '
+            'hasilnya menghapus seluruh guna panel Cek Prediksi.'
+        )
+
+    if not item.selected:
+        sudah = item.snapshot.hypotheses.filter(selected=True).count()
+        if sudah >= MAKS_HIPOTESIS:
+            # Ditolak dengan alasan yang kelihatan di halaman, bukan 400 telanjang.
+            return redirect(f'{kembali}&penuh=1')
+
+    item.selected = not item.selected
+    item.save(update_fields=['selected'])
+    return redirect(kembali)
 
 
 # ------------------------------------------------------------------- berita

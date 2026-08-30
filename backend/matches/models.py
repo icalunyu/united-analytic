@@ -731,6 +731,19 @@ class HypothesisItem(models.Model):
     outcome_note = models.CharField(max_length=300, blank=True)
     evaluated_at = models.DateTimeField(null=True, blank=True)
 
+    # Dipertaruhkan analis, bukan sekadar kandidat yang dihasilkan mesin.
+    #
+    # **Kenapa penanda, bukan penghapusan.** Alur lamanya: buka admin, hapus
+    # kandidat yang tidak dipakai. Itu rapuh — `predict_lineup` bikin snapshot
+    # BARU tiap susunan berubah, dan snapshot baru lahir membawa seluruh
+    # kandidat lagi. Pilihan yang diwujudkan sebagai penghapusan hilang tiap
+    # kali prediksinya diperbarui, tanpa ada yang memberitahu.
+    #
+    # Sebagai penanda, pilihannya bisa ikut terbawa ke snapshot berikutnya
+    # (dicocokkan lewat `text`), dan tiap snapshot tetap merekam apa yang
+    # dipertaruhkan PADA SAAT ITU — sifat append-only-nya tidak dilanggar.
+    selected = models.BooleanField(default=False)
+
     class Meta:
         ordering = ['snapshot', 'order']
 

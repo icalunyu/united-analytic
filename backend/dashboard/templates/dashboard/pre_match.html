@@ -56,21 +56,32 @@
   <div class="flex flex-col gap-5">
 
     {# ---------- PR-04 Cek Prediksi / PR-03 Hipotesis ---------- #}
-    {% if hipotesis %}
+    {% if hipotesis or kandidat %}
     <div class="card p-4 {% if berjalan or selesai %}border-[rgba(214,38,58,.3)]{% endif %}">
       <h2 class="mb-1 text-sm font-semibold text-[var(--color-text-strong)]">
         {% if berjalan or selesai %}Cek Prediksi{% else %}Hipotesis Taktik{% endif %}
-        <span class="font-normal text-gray-500">· {{ hipotesis|length }} dugaan</span>
+        <span class="font-normal text-gray-500">
+          · {{ hipotesis|length }}{% if bisa_dipilih %} dari {{ maks_hipotesis }}{% endif %} dipertaruhkan
+        </span>
       </h2>
-      <p class="mb-3 text-xs text-gray-500">
+      <p class="mb-3 text-xs leading-relaxed text-gray-500">
         {% if berjalan or selesai %}
           Dinilai dari data laga ini. Yang belum bisa dinilai otomatis tetap
           <b>BELUM</b> — app nggak menebak kalimat yang bukan dia yang tulis.
         {% else %}
-          Dugaan yang tersimpan sebelum kick-off. Sesudah laga, tiap kartu dinilai
-          KENA atau MELESET dari angkanya sendiri.
+          Kandidat di bawah dihasilkan dari pola data, <b>bukan kesimpulan</b>.
+          Pilih maksimal {{ maks_hipotesis }} yang mau dipertaruhkan — itu yang
+          nanti dinilai KENA atau MELESET dari angkanya sendiri.
         {% endif %}
       </p>
+
+      {% if tolak_penuh %}
+      <p class="mb-3 rounded border border-amber-400/30 bg-amber-400/10 px-2.5 py-1.5 text-[11px] text-amber-300">
+        Sudah {{ maks_hipotesis }} yang dipertaruhkan. Lepas salah satu dulu kalau mau ganti —
+        desainnya minta tiga kartu, dan panel berisi enam dugaan bukan analisis.
+      </p>
+      {% endif %}
+
       <div class="flex flex-col gap-2">
         {% for h in hipotesis %}
         <div class="rounded-lg border-t-2 {% if h.outcome == 'KENA' %}border-emerald-500{% elif h.outcome == 'MELESET' %}border-red-500{% else %}border-amber-400{% endif %} bg-white/[0.02] p-3">
@@ -82,9 +93,54 @@
           {% if h.outcome_note %}
           <div class="mt-1 text-xs {% if h.outcome == 'KENA' %}text-emerald-400/80{% elif h.outcome == 'MELESET' %}text-red-400/80{% else %}text-gray-500{% endif %}">{{ h.outcome_note }}</div>
           {% endif %}
+          {% if bisa_dipilih %}
+          <form method="post" action="{% url 'dashboard:hypothesis_toggle' h.pk %}" class="mt-2">
+            {% csrf_token %}
+            <button type="submit" class="text-[10px] text-gray-600 underline transition-colors hover:text-white">
+              Lepas dari taruhan
+            </button>
+          </form>
+          {% endif %}
         </div>
+        {% empty %}
+        {% if bisa_dipilih %}
+        <p class="rounded-lg border border-dashed border-[var(--color-border)] p-3 text-xs text-gray-500">
+          Belum ada yang dipertaruhkan. Pilih dari kandidat di bawah.
+        </p>
+        {% endif %}
         {% endfor %}
       </div>
+
+      {% if bisa_dipilih and kandidat %}
+      <div class="mt-4 border-t border-[var(--color-border)] pt-3">
+        <div class="mb-2 font-mono text-[10px] uppercase tracking-wide text-gray-600">
+          Kandidat ({{ kandidat|length }}) · dihasilkan mesin, belum dipertaruhkan
+        </div>
+        <div class="flex flex-col gap-2">
+          {% for h in kandidat %}
+          <div class="rounded-lg border border-[var(--color-border)] p-3">
+            <div class="text-sm text-gray-400">{{ h.text }}</div>
+            <div class="mt-1 text-xs text-gray-600">{{ h.evidence_note }}</div>
+            <form method="post" action="{% url 'dashboard:hypothesis_toggle' h.pk %}" class="mt-2">
+              {% csrf_token %}
+              <button type="submit"
+                      class="rounded border px-2 py-1 text-[11px] font-medium transition-colors
+                             {% if kuota_penuh %}border-[var(--color-border)] text-gray-600{% else %}border-[var(--color-mu)]/50 text-[var(--color-mu)] hover:bg-[var(--color-mu)]/15{% endif %}">
+                Pertaruhkan ini
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if bisa_dipilih %}
+      <p class="mt-3 text-[10px] leading-snug text-gray-600">
+        Pilihan ikut terbawa waktu prediksi susunan diperbarui, dan membeku
+        sendiri begitu peluit dibunyikan.
+      </p>
+      {% endif %}
     </div>
     {% endif %}
 

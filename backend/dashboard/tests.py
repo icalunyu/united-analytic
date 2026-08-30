@@ -820,3 +820,159 @@ class KomentarTemplateTests(TestCase):
         self.assertEqual(
             salah, [], f'Pakai {{% comment %}} untuk komentar lintas baris: {salah}'
         )
+
+
+class PilihHipotesisTests(TestCase):
+    """PR-03 — analis memilih di halaman Pra-laga, bukan di Django admin.
+
+    Handoff: *"App tidak menyimpulkan, dia menyiapkan bukti. Kesimpulan tetap
+    dari analis."* Yang dijaga di sini bukan tombolnya, tapi tiga sifat yang
+    kalau hilang bikin panel Cek Prediksi kehilangan gunanya.
+    """
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from matches.models import HypothesisItem, PredictionSnapshot
+
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town')
+        self.match = Match.objects.create(
+            home_team=self.mu, away_team=self.lawan,
+            kickoff_at=timezone.now() + timedelta(days=3),
+        )
+        self.snapshot = PredictionSnapshot.objects.create(match=self.match)
+        self.HypothesisItem = HypothesisItem
+        self.items = [
+            HypothesisItem.objects.create(
+                snapshot=self.snapshot, order=i, text=f'Dugaan {i}',
+                evidence_note=f'Dasar {i}',
+            )
+            for i in range(1, 6)
+        ]
+
+    def _pilih(self, item):
+        return self.client.post(reverse('dashboard:hypothesis_toggle', args=[item.pk]))
+
+    def test_memilih_dan_melepas(self):
+        self._pilih(self.items[0])
+        self.items[0].refresh_from_db()
+        self.assertTrue(self.items[0].selected)
+
+        self._pilih(self.items[0])
+        self.items[0].refresh_from_db()
+        self.assertFalse(self.items[0].selected)
+
+    def test_maksimal_tiga_yang_dipertaruhkan(self):
+        """Desain minta tiga kartu. Panel berisi enam dugaan bukan analisis."""
+        from matches.lineup_prediction import MAKS_HIPOTESIS
+
+        for item in self.items[:MAKS_HIPOTESIS]:
+            self._pilih(item)
+
+        r = self._pilih(self.items[MAKS_HIPOTESIS])
+        self.items[MAKS_HIPOTESIS].refresh_from_db()
+        self.assertFalse(self.items[MAKS_HIPOTESIS].selected)
+        self.assertIn('penuh=1', r['Location'])
+
+        self.assertEqual(
+            self.snapshot.hypotheses.filter(selected=True).count(), MAKS_HIPOTESIS
+        )
+
+    def test_alasan_penolakan_kelihatan_di_halaman(self):
+        """Ditolak diam-diam sama membingungkannya dengan tombol yang rusak."""
+        from matches.lineup_prediction import MAKS_HIPOTESIS
+
+        for item in self.items[:MAKS_HIPOTESIS]:
+            self._pilih(item)
+        r = self.client.get(
+            reverse('dashboard:pre_match'), {'match': self.match.pk, 'penuh': '1'}
+        )
+        self.assertTrue(r.context['tolak_penuh'])
+        self.assertContains(r, 'Lepas salah satu dulu')
+
+    def test_sesudah_kickoff_pilihannya_beku(self):
+        """Mengubah taruhan setelah tahu hasilnya menghapus guna panelnya."""
+        from datetime import timedelta
+
+        Match.objects.filter(pk=self.match.pk).update(
+            kickoff_at=timezone.now() - timedelta(hours=1), status=Match.Status.LIVE
+        )
+        r = self._pilih(self.items[0])
+        self.assertEqual(r.status_code, 400)
+        self.items[0].refresh_from_db()
+        self.assertFalse(self.items[0].selected)
+
+    def test_kandidat_dan_taruhan_dipisah_di_halaman(self):
+        self._pilih(self.items[0])
+        r = self.client.get(reverse('dashboard:pre_match'), {'match': self.match.pk})
+        self.assertEqual([h.text for h in r.context['hipotesis']], ['Dugaan 1'])
+        self.assertEqual(len(r.context['kandidat']), 4)
+        self.assertTrue(r.context['bisa_dipilih'])
+
+    def test_snapshot_lama_tanpa_pilihan_tetap_tampil_utuh(self):
+        """Kolom `selected` lahir belakangan. Snapshot lama nol pilihan —
+        menampilkannya sebagai panel kosong bikin data yang ada kelihatan
+        hilang."""
+        from datetime import timedelta
+
+        # Cap waktu snapshot HARUS ikut digeser. `created_at` itu auto_now_add,
+        # jadi kalau cuma kickoff yang dimundurkan, snapshot-nya jadi
+        # PASCA-peluit dan ditolak `prediction_before_kickoff()` — itu perilaku
+        # yang dijaga, bukan bug.
+        kickoff = timezone.now() - timedelta(hours=1)
+        Match.objects.filter(pk=self.match.pk).update(
+            kickoff_at=kickoff, status=Match.Status.LIVE
+        )
+        type(self.snapshot).objects.filter(pk=self.snapshot.pk).update(
+            created_at=kickoff - timedelta(hours=5)
+        )
+        r = self.client.get(reverse('dashboard:pre_match'), {'match': self.match.pk})
+        self.assertEqual(len(r.context['hipotesis']), 5)
+        self.assertEqual(len(r.context['kandidat']), 0)
+        self.assertFalse(r.context['bisa_dipilih'])
+
+
+class PilihanIkutSnapshotBerikutnyaTests(TestCase):
+    """Pilihan harus selamat waktu prediksi susunan diperbarui.
+
+    Ini alasan `selected` jadi penanda, bukan penghapusan: `predict_lineup`
+    bikin snapshot BARU tiap susunan berubah, dan snapshot baru lahir membawa
+    seluruh kandidat lagi. Pilihan yang diwujudkan sebagai penghapusan hilang
+    tiap kali prediksinya diperbarui, tanpa ada yang memberitahu.
+    """
+
+    def test_pilihan_terbawa_ke_snapshot_baru(self):
+        from datetime import timedelta
+
+        from matches.management.commands.predict_lineup import Command
+        from matches.models import HypothesisItem, PredictionSnapshot
+
+        mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        lawan = Team.objects.create(name='Ipswich Town')
+        match = Match.objects.create(
+            home_team=mu, away_team=lawan, kickoff_at=timezone.now() + timedelta(days=2)
+        )
+        lama = PredictionSnapshot.objects.create(match=match)
+        HypothesisItem.objects.create(
+            snapshot=lama, order=1, text='MU turun 4-2-3-1', selected=True
+        )
+        HypothesisItem.objects.create(
+            snapshot=lama, order=2, text='Tembakan tepat >= 6', selected=False
+        )
+
+        kandidat = [
+            {'text': 'MU turun 4-2-3-1', 'evidence_note': 'x'},
+            {'text': 'Tembakan tepat >= 6', 'evidence_note': 'y'},
+            {'text': 'Dugaan baru', 'evidence_note': 'z'},
+        ]
+        prediksi = {
+            'slots': [], 'formation': '4-2-3-1', 'n_efektif': 5,
+            'matches_used': [], 'warnings': [],
+        }
+        baru = Command._tulis(match, prediksi, 5, kandidat)
+
+        hasil = {h.text: h.selected for h in baru.hypotheses.all()}
+        self.assertTrue(hasil['MU turun 4-2-3-1'])
+        self.assertFalse(hasil['Tembakan tepat >= 6'])
+        self.assertFalse(hasil['Dugaan baru'])

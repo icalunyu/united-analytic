@@ -36,7 +36,8 @@ cp backend/.env.example backend/.env
 
 cd backend
 python manage.py migrate
-python manage.py createsuperuser   # opsional, buat akses /admin/
+python manage.py createsuperuser   # opsional — semua alur harian ada di UI,
+                                   # admin cuma buat inspeksi data mentah
 python manage.py runserver
 ```
 

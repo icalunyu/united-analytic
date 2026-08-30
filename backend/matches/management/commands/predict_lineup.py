@@ -165,11 +165,29 @@ class Command(BaseCommand):
             self.stdout.write(f'     {k["evidence_note"]}')
         self.stdout.write(
             '\n  Handoff: "App tidak menyimpulkan, dia menyiapkan bukti."\n'
-            '  Buka admin, sisakan tiga yang mau kamu pertaruhkan, hapus sisanya.'
+            '  Pilih tiga yang mau dipertaruhkan di halaman Pra-laga (/pra/),\n'
+            '  bukan di admin. Pilihan ikut terbawa ke snapshot berikutnya.'
         )
 
     @staticmethod
-    def _tulis(match, prediksi, window, kandidat=()):
+    def _pilihan_sebelumnya(match):
+        """Teks hipotesis yang sudah dipertaruhkan analis di snapshot terakhir.
+
+        Tanpa ini, tiap kali susunan berubah snapshot baru lahir dengan semua
+        kandidat tidak terpilih — dan pilihan yang sudah diambil analis lenyap
+        diam-diam. Dicocokkan lewat `text` karena itu yang dilihat analis waktu
+        memilih; kandidat yang kalimatnya berubah memang layak dipilih ulang.
+        """
+        terakhir = match.prediction_snapshots.first()
+        if terakhir is None:
+            return set()
+        return set(
+            terakhir.hypotheses.filter(selected=True).values_list('text', flat=True)
+        )
+
+    @classmethod
+    def _tulis(cls, match, prediksi, window, kandidat=()):
+        dipilih = cls._pilihan_sebelumnya(match)
         snapshot = PredictionSnapshot.objects.create(
             match=match, note=build_note(prediksi, window)
         )
@@ -180,6 +198,7 @@ class Command(BaseCommand):
                 text=k['text'],
                 evidence_note=k['evidence_note'],
                 outcome=HypothesisItem.Outcome.PENDING,
+                selected=k['text'] in dipilih,
             )
             for i, k in enumerate(kandidat, start=1)
         )

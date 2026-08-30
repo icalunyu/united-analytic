@@ -26,6 +26,11 @@ urlpatterns = [
         views.availability_reset,
         name='availability_reset',
     ),
+    path(
+        'pra/hipotesis/<int:item_id>/pilih/',
+        views.hypothesis_toggle,
+        name='hypothesis_toggle',
+    ),
     path('pasca/<int:match_id>/momen/', views.moment_add, name='moment_add'),
     path('momen/<int:moment_id>/centang/', views.moment_toggle, name='moment_toggle'),
     path('momen/<int:moment_id>/hapus/', views.moment_delete, name='moment_delete'),

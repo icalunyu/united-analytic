@@ -143,7 +143,7 @@ terpenuhi & dibuktikan test** ✅
 | ✅ | **Prediksi Susunan (PR-02)** | Lapangan 11 node, orientasi TV, digambar tanpa aset |
 | ✅ | **Cek Prediksi (PR-04)** | Kartu KENA/BELUM/MELESET, dinilai `evaluate_hypotheses` |
 | ✅ | **Head to Head (PR-05)** | Skor selalu ditulis United dulu |
-| 🟡 | Hipotesis Taktik (PR-03) | Tampil, tapi spesifikasi minta pola LAWAN dari 8 laga |
+| 🟡 | Hipotesis Taktik (PR-03) | Kandidat dipilih analis langsung di halaman (maks 3), pilihannya ikut terbawa ke snapshot berikutnya. Sisa: spesifikasi minta pola LAWAN dari 8 laga, sekarang masih pola MU |
 | ⬜ | Pemain Kunci (PR-06) | Butuh tolok ukur liga per posisi |
 | ⬜ | Profil Lawan (PR-07) | Butuh PPDA + persentil |
 | ⬜ | Duel Kunci (PR-08) | |
@@ -196,9 +196,11 @@ menit per posisi, usia, dan output per 90.
 - 'Tyrell Malacia' (lokal) punya dua record dan `merge_duplicates` sengaja
   melewatinya — salah satunya bertim "No Club" sehingga aturan pengaman "main
   di tanggal sama untuk klub berbeda" kena palsu. Butuh mata manusia.
-- Sebagian besar pemain lawan `position`-nya kosong. Mereka dinilai pakai
-  bobot TENGAH, dan itu membatasi seberapa jauh `calibrate_ratings` bisa
-  dipercaya (134 dari 377 baris yang bisa dipakai).
+- **Posisi pemain lawan hampir kosong: 1 dari 2.965.** Ini penghalang di bawah
+  PR-06, PR-07, PR-08, dan BR-01 — semuanya minta pembanding per posisi.
+  Bahannya sudah ada: 8.327 baris statistik non-MU punya `formation_x`/`_y`,
+  mencakup 560 pemain, jadi posisinya bisa diturunkan dari koordinat susunan
+  tanpa satu pun panggilan API baru.
 
 **Sudah lunas:**
 - **Produksi sudah jalan** — 9 halaman 200, dua migrasi terpasang, backup
