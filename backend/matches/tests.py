@@ -2558,3 +2558,125 @@ class KalibrasiNilaiTests(TestCase):
         out = StringIO()
         call_command('calibrate_ratings', '--semua-posisi', stdout=out)
         self.assertIn('nggak punya posisi', out.getvalue())
+
+
+class ModeLiveTests(TestCase):
+    """Penarikan mode live — sering waktu ada laga, diam waktu tidak ada.
+
+    Yang paling penting dijaga: deteksinya TIDAK boleh bergantung pada
+    `Match.status` sendirian. Status di DB cuma berubah kalau kita menarik,
+    dan yang menentukan kapan menarik justru status itu — melingkar, dan
+    akibatnya mode live tidak pernah menyala sama sekali.
+    """
+
+    def setUp(self):
+        self.mu = Team.objects.create(name='Manchester United', is_manchester_united=True)
+        self.lawan = Team.objects.create(name='Ipswich Town')
+
+    def _laga(self, menit_dari_sekarang, status=Match.Status.NOT_STARTED, liga='Premier League'):
+        from datetime import timedelta
+
+        return Match.objects.create(
+            home_team=self.mu, away_team=self.lawan,
+            kickoff_at=timezone.now() + timedelta(minutes=menit_dari_sekarang),
+            status=status, league_name=liga,
+        )
+
+    def test_menyala_di_menit_kickoff_walau_status_masih_NS(self):
+        """Ini inti masalahnya. Kalau ini gagal, mode live nggak pernah jalan."""
+        from matches import live
+
+        self._laga(0, status=Match.Status.NOT_STARTED)
+        self.assertEqual(len(live.laga_berjalan(timezone.now())), 1)
+
+    def test_diam_kalau_tidak_ada_laga(self):
+        from matches import live
+
+        self._laga(-60 * 24)  # kemarin
+        self._laga(60 * 24)   # besok
+        self.assertEqual(live.laga_berjalan(timezone.now()), [])
+
+    def test_laga_yang_sudah_final_tidak_ditarik_lagi(self):
+        from matches import live
+
+        self._laga(-30, status=Match.Status.FINISHED)
+        self.assertEqual(live.laga_berjalan(timezone.now()), [])
+
+    def test_babak_tambahan_masih_tertangkap(self):
+        """Kehilangan gol menit 90+8 jauh lebih mahal daripada satu tarikan
+        ekstra sesudah peluit."""
+        from matches import live
+
+        self._laga(-150, status=Match.Status.LIVE)
+        self.assertEqual(len(live.laga_berjalan(timezone.now())), 1)
+
+    def test_status_live_dipercaya_walau_di_luar_jendela(self):
+        from matches import live
+
+        self._laga(-60 * 5, status=Match.Status.LIVE)
+        m = Match.objects.first()
+        self.assertTrue(
+            live.sedang_berjalan(
+                m, timezone.now(),
+                status_live=(Match.Status.LIVE,), status_final=(Match.Status.FINISHED,),
+            )
+        )
+
+    def test_cuma_satu_kompetisi_yang_ditembak(self):
+        """Alasan seluruh mode ini bisa cepat: delapan slug jadi satu."""
+        from matches import live
+        from matches.competitions import espn_slug
+
+        laga = [self._laga(10, liga='Premier League')]
+        slugs, tanpa = live.slug_yang_perlu(laga, espn_slug)
+        self.assertEqual(slugs, ['eng.1'])
+        self.assertEqual(tanpa, [])
+
+    def test_kompetisi_tak_dikenal_dilaporkan_bukan_ditebak(self):
+        """Menebak slug menghasilkan panggilan yang pasti gagal, dan mode live
+        jadi diam tanpa gejala."""
+        from matches import live
+        from matches.competitions import espn_slug
+
+        laga = [self._laga(10, liga='FIFA Club World Cup')]
+        slugs, tanpa = live.slug_yang_perlu(laga, espn_slug)
+        self.assertEqual(slugs, [])
+        self.assertEqual(len(tanpa), 1)
+
+    def test_command_nol_panggilan_kalau_tidak_ada_laga(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        self._laga(60 * 24)
+        out = StringIO()
+        call_command('pull_live', stdout=out)
+        self.assertIn('Nol panggilan jaringan', out.getvalue())
+
+    def test_command_melaporkan_slug_tanpa_menyentuh_jaringan(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        self._laga(5, liga='UEFA Europa League')
+        out = StringIO()
+        call_command('pull_live', '--dry-run', stdout=out)
+        teks = out.getvalue()
+        self.assertIn('BERJALAN', teks)
+        self.assertIn('uefa.europa', teks)
+
+
+class SlugKompetisiTests(SimpleTestCase):
+    def test_summer_series_bukan_liga(self):
+        """'Premier League - Summer Series' memuat 'premier league' tapi itu
+        laga pramusim. Urutan aturannya yang menyelamatkan."""
+        from matches.competitions import espn_slug
+
+        self.assertEqual(espn_slug('Premier League - Summer Series'), 'club.friendly')
+        self.assertEqual(espn_slug('Premier League'), 'eng.1')
+
+    def test_nama_tak_dikenal_mengembalikan_none(self):
+        from matches.competitions import espn_slug
+
+        self.assertIsNone(espn_slug('FIFA Club World Cup'))
+        self.assertIsNone(espn_slug(''))
