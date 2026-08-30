@@ -1711,3 +1711,73 @@ menghapus seluruh guna panel Cek Prediksi. Endpoint-nya menolak dengan 400.
 Snapshot lama yang lahir sebelum kolom ini ada punya nol pilihan. Menampilkannya
 sebagai panel kosong bikin data yang ada kelihatan hilang, jadi seluruh isinya
 dianggap dipertaruhkan — apa adanya seperti dulu.
+
+## 29. Mode live: yang bikin cepat itu membuang kerja, bukan menambah kuota
+
+User nonton laga sambil membuka app, dan datanya terasa basi. Panel Kesehatan
+Sumber memang menunjukkannya: ESPN "6 menit lalu", sisanya harian.
+
+### Penyebabnya bukan yang saya duga
+
+Dugaan pertama: kuota. Salah. `pull_match_events_espn` menyapu **delapan slug
+kompetisi** tiap run dan makan **~9 detik** — itu sebabnya dia dijadwalkan
+tiap 10 menit, bukan tiap menit. Tujuh dari delapan kompetisi itu jelas-jelas
+tidak sedang bermain.
+
+`pull_live` membuang dua pekerjaan yang tidak perlu:
+
+1. Tidak ada laga berjalan → **nol panggilan jaringan**, cuma satu query DB.
+   Terukur 2 detik di produksi.
+2. Ada laga → cuma slug kompetisi laga itu. Terukur **3 detik**, bukan 9.
+
+Jadi tiap 2 menit selama laga justru **lebih ringan** buat ESPN daripada
+jadwal 10 menit sebelumnya. Sapuan malam sekalian dikendurkan `*/10` → `*/20`
+karena mode live sudah menangani laga berjalan — di luar laga, beban ke ESPN
+sekarang setengahnya.
+
+### Jebakan melingkar yang hampir saya masuki
+
+Cara paling wajar mendeteksi laga live: cari `Match.status == LIVE`. Itu tidak
+bisa jalan, dan alasannya melingkar — `status` di DB kita **cuma berubah kalau
+kita menarik data**, dan yang menentukan kapan menarik justru status itu. Pada
+menit kick-off statusnya masih `NS`, jadi mode live tidak akan pernah menyala
+sama sekali.
+
+Yang dipakai jam dinding; `status` jadi penguat, bukan syarat. Ada tesnya, dan
+namanya menyebut persis itu: `test_menyala_di_menit_kickoff_walau_status_masih_NS`.
+
+Terbukti waktu diuji end-to-end: laga berstatus `NS` terdeteksi, ditarik, dan
+hasilnya masuk — 5–2, 36 event, 80 statistik pemain.
+
+### Jendela jam, dan kenapa 3 jam ke belakang
+
+Jendelanya `*/2 17-23,0-9` waktu server (WIB — sudah dicek, bukan UTC).
+Menutupi PL paling awal 18:30 WIB, Eropa ~03:00, dan tur pramusim Amerika
+~07:00. Celah 10:00–16:59 WIB ditangani sapuan per jam; MU praktis tidak
+pernah main jam segitu.
+
+Jendela ke belakang 3 jam menampung babak tambahan, adu penalti, dan jeda
+panjang. Menarik beberapa kali lebih banyak sesudah peluit jauh lebih murah
+daripada kehilangan gol menit 90+8.
+
+### Soal FPL sebagai sumber live
+
+User menanyakannya, dan endpoint-nya diperiksa langsung, bukan dijawab dari
+ingatan. `fantasy.premierleague.com/api/fixtures/?event=N` dan
+`/api/event/N/live/` — gratis, tanpa API key.
+
+**Yang dia punya:** skor berjalan, menit berjalan, dan per pemain: menit, gol,
+asis, xG, xA, saves, tackles, recoveries, clearances/blocks/interceptions,
+bonus, bps. Detail, dan memang bergerak selama laga.
+
+**Yang dia TIDAK punya, dan ini yang menentukan:** *menit kejadian*. FPL bilang
+"Bruno mencetak 1", tidak pernah "menit 23". Tanpa itu tidak ada timeline,
+tidak ada kurva momentum, dan tidak ada deteksi momen per menit — persis
+tulang punggung halaman Live dan Pasca.
+
+**Dan cuma Premier League.** MU main belasan laga piala dan Eropa tiap musim
+yang tidak ada di FPL sama sekali.
+
+Jadi FPL tidak bisa menggantikan ESPN. Nilai uniknya — xG/tackles per pemain
+secara langsung — baru benar-benar terpakai waktu halaman Live (Tahap 6)
+dibangun, dan halaman itu belum ada.

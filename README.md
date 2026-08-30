@@ -212,6 +212,32 @@ Server ini (DomaiNesia, `musafar.web.id`) udah pernah dipakai buat deploy app Dj
 
 ## Backup
 
+### Penarikan mode live
+
+Waktu ada laga berjalan, `pull_match_events_espn` biasa terlalu berat buat
+dijalanin sering — dia nyapu 8 slug kompetisi, ~9 detik per run. `pull_live`
+nyari laga MU yang lagi jalan dulu, terus cuma nembak slug kompetisi laga itu:
+
+```bash
+python manage.py pull_live --dry-run   # lihat apa yang bakal ditarik
+python manage.py pull_live
+```
+
+Nol panggilan jaringan kalau nggak ada laga (2 detik, cuma query DB), ~3 detik
+kalau ada. Aman dijadwalin tiap 2 menit — di produksi:
+
+```
+*/2 17-23,0-9 * * * ... manage.py pull_live
+```
+
+Jam server itu **WIB**, bukan UTC. Jendelanya nutup PL paling awal (18:30 WIB),
+Eropa (~03:00), dan tur pramusim Amerika (~07:00).
+
+Deteksinya pakai **jam dinding, bukan `Match.status`**. Status di DB cuma
+berubah kalau kita narik, dan yang nentuin kapan narik justru status itu —
+melingkar, dan akibatnya pas menit kick-off statusnya masih `NS` sehingga mode
+live nggak pernah nyala.
+
 ### Turunan ketersediaan dari berita
 
 `pull_news` cuma menarik judul. Yang mengubah judul jadi status pemain command
